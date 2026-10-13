@@ -1,8 +1,8 @@
 import type { Emulator } from '../../emulator';
 import { fillTextBitmap } from '../../emu-render';
-import { OPAQUE } from '../types';
 import { colorToCSS, getDCFont } from './_helpers';
-import { applyFont, fontPixelSize, getTextMetrics, measureTextWidth } from '../../../gdi';
+import { applyFont, getTextMetrics, measureTextWidth } from '../../../gdi';
+import { fontCellHeight } from './text-out';
 
 export function registerText(emu: Emulator): void {
   const gdi32 = emu.registerDll('GDI32.DLL');
@@ -11,73 +11,9 @@ export function registerText(emu: Emulator): void {
   // it's the character height (cell minus internal leading), positive is
   // the cell height itself. We approximate by upscaling negative values
   // 20 % so calls like GetTextMetrics report a plausible tmHeight.
-  const getFontSize = (hdc: number): number => {
-    const f = getDCFont(emu, hdc);
-    const px = fontPixelSize(f);
-    return f.height < 0 ? Math.round(px * 1.2) : px;
-  };
+  const getFontSize = (hdc: number): number => fontCellHeight(emu, hdc);
 
-  gdi32.register('TextOutA', 5, () => {
-    const hdc = emu.readArg(0);
-    const x = emu.readArg(1) | 0;
-    const y = emu.readArg(2) | 0;
-    const strPtr = emu.readArg(3);
-    const count = emu.readArg(4);
 
-    const dc = emu.getDC(hdc);
-    if (!dc) return 0;
-
-    const text = emu.memory.readBytesMBCS(strPtr, count);
-
-    const font = getDCFont(emu, hdc);
-    const fontSize = getFontSize(hdc);
-    applyFont(dc.ctx, font);
-    if (dc.bkMode === OPAQUE) {
-      dc.ctx.fillStyle = colorToCSS(dc.bkColor);
-      const m = dc.ctx.measureText(text);
-      dc.ctx.fillRect(x, y, m.width, fontSize);
-    }
-    dc.ctx.fillStyle = colorToCSS(dc.textColor);
-    dc.ctx.textBaseline = 'top';
-    fillTextBitmap(dc.ctx, text, x, y);
-
-    emu.syncDCToCanvas(hdc);
-    return 1;
-  });
-
-  gdi32.register('ExtTextOutA', 8, () => {
-    const hdc = emu.readArg(0);
-    const x = emu.readArg(1) | 0;
-    const y = emu.readArg(2) | 0;
-    const options = emu.readArg(3);
-    const rectPtr = emu.readArg(4);
-    const strPtr = emu.readArg(5);
-    const count = emu.readArg(6);
-
-    const dc = emu.getDC(hdc);
-    if (!dc) return 0;
-
-    // If ETO_OPAQUE (0x2), fill background rect
-    if ((options & 0x2) && rectPtr) {
-      const left = emu.memory.readI32(rectPtr);
-      const top = emu.memory.readI32(rectPtr + 4);
-      const right = emu.memory.readI32(rectPtr + 8);
-      const bottom = emu.memory.readI32(rectPtr + 12);
-      dc.ctx.fillStyle = colorToCSS(dc.bkColor);
-      dc.ctx.fillRect(left, top, right - left, bottom - top);
-    }
-
-    if (strPtr && count > 0) {
-      const text = emu.memory.readBytesMBCS(strPtr, count);
-      applyFont(dc.ctx, getDCFont(emu, hdc));
-      dc.ctx.fillStyle = colorToCSS(dc.textColor);
-      dc.ctx.textBaseline = 'top';
-      fillTextBitmap(dc.ctx, text, x, y);
-    }
-
-    emu.syncDCToCanvas(hdc);
-    return 1;
-  });
 
   // DrawTextA is a USER32 function — the full implementation with word-wrap
   // is in user32/text.ts. Only register under GDI32 as a simple fallback.
@@ -318,43 +254,7 @@ export function registerText(emu: Emulator): void {
     return 1;
   });
 
-  gdi32.register('ExtTextOutW', 8, () => {
-    const hdc = emu.readArg(0);
-    const x = emu.readArg(1) | 0;
-    const y = emu.readArg(2) | 0;
-    const options = emu.readArg(3);
-    const rectPtr = emu.readArg(4);
-    const strPtr = emu.readArg(5);
-    const count = emu.readArg(6);
-    const dc = emu.getDC(hdc);
-    if (!dc) return 0;
 
-    let text = '';
-    if (strPtr && count > 0) {
-      for (let i = 0; i < count; i++) text += String.fromCharCode(emu.memory.readU16(strPtr + i * 2));
-    }
-    if ((options & 0x2) && rectPtr) {
-      const left = emu.memory.readI32(rectPtr);
-      const top = emu.memory.readI32(rectPtr + 4);
-      const right = emu.memory.readI32(rectPtr + 8);
-      const bottom = emu.memory.readI32(rectPtr + 12);
-      dc.ctx.fillStyle = colorToCSS(dc.bkColor);
-      dc.ctx.fillRect(left, top, right - left, bottom - top);
-    }
-
-    if (text) {
-      applyFont(dc.ctx, getDCFont(emu, hdc));
-      dc.ctx.fillStyle = colorToCSS(dc.textColor);
-      dc.ctx.textBaseline = 'top';
-      fillTextBitmap(dc.ctx, text, x, y);
-    }
-
-    emu.syncDCToCanvas(hdc);
-    return 1;
-  });
-
-  gdi32.register('SetTextAlign', 2, () => 0); // return previous alignment
-  gdi32.register('GetTextAlign', 1, () => 0); // TA_LEFT|TA_TOP
   gdi32.register('SetTextCharacterExtra', 2, () => 0); // return previous spacing
   gdi32.register('SetTextJustification', 3, () => 1);
   gdi32.register('GetNearestColor', 2, () => emu.readArg(1)); // return the color as-is
@@ -413,19 +313,7 @@ export function registerText(emu: Emulator): void {
     return 1;
   });
 
-  gdi32.register('TextOutW', 5, () => 1);
 
-  gdi32.register('GetTextExtentPoint32W', 4, () => {
-    const _hdc = emu.readArg(0);
-    const _str = emu.readArg(1);
-    const count = emu.readArg(2);
-    const sizePtr = emu.readArg(3);
-    if (sizePtr) {
-      emu.memory.writeU32(sizePtr, count * 7); // cx
-      emu.memory.writeU32(sizePtr + 4, 16);    // cy
-    }
-    return 1;
-  });
 
   // GetCharWidthW(hdc, iFirstChar, iLastChar, lpBuffer)
   gdi32.register('GetCharWidthW', 4, () => {
