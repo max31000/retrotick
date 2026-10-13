@@ -1,5 +1,5 @@
 import type { Emulator } from '../../emulator';
-import { emuCompleteThunk } from '../../emu-exec';
+import { emuCompleteThunk, scheduleImmediate } from '../../emu-exec';
 
 export function registerSync(emu: Emulator): void {
   const kernel32 = emu.registerDll('KERNEL32.DLL');
@@ -164,9 +164,10 @@ export function registerSync(emu: Emulator): void {
     setTimeout(emu.captureThreadResume(() => {
       emu.waitingForMessage = false;
       emuCompleteThunk(emu, 0, stackBytes);
-      if (emu.running && !emu.halted) {
-        requestAnimationFrame(emu.tick);
-      }
+      // Resume right away: waiting for the next animation frame would stretch every
+      // short Sleep to >= 1 frame (and much longer where rAF is throttled), making
+      // Sleep-paced animations (card deals) several times slower than on Windows.
+      if (emu.running && !emu.halted) scheduleImmediate(emu.tick);
     }), dwMilliseconds);
     return undefined;
   });

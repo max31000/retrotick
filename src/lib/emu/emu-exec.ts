@@ -100,7 +100,7 @@ function handlePageFault(emu: Emulator, e: PageFaultError): boolean {
 let _immedCb: (() => void) | null = null;
 const _immedChan = typeof MessageChannel !== 'undefined' ? new MessageChannel() : null;
 if (_immedChan) { _immedChan.port1.onmessage = () => { if (_immedCb) { const cb = _immedCb; _immedCb = null; cb(); } }; }
-function scheduleImmediate(fn: () => void): void {
+export function scheduleImmediate(fn: () => void): void {
   if (_immedChan) { _immedCb = fn; _immedChan.port2.postMessage(null); }
   else setTimeout(fn, 0);
 }
