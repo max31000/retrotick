@@ -4,7 +4,9 @@ import { parsePE, parseCOM, extractMenus, extractIcons } from '../lib/pe';
 import { Emulator } from '../lib/emu/emulator';
 import type { DialogInfo, ControlOverlay, ProcessRegistry, CommonDialogRequest } from '../lib/emu/emulator';
 import type { WindowInfo } from '../lib/emu/win32/user32/index';
-import { WM_LBUTTONDOWN, WM_LBUTTONUP, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_MOUSEMOVE, WM_LBUTTONDBLCLK, WM_RBUTTONDBLCLK, WM_COMMAND, WM_SYSCOMMAND, WM_SIZE, WM_GETMINMAXINFO, WM_KEYDOWN, WM_KEYUP, WM_CHAR, WM_INITMENU, WM_INITMENUPOPUP, MK_LBUTTON, MK_RBUTTON, SC_MINIMIZE, SC_MAXIMIZE, SC_RESTORE, SC_CLOSE } from '../lib/emu/win32/types';
+import { WM_MOUSEMOVE, WM_COMMAND, WM_SYSCOMMAND, WM_SIZE, WM_GETMINMAXINFO, WM_KEYDOWN, WM_KEYUP, WM_CHAR, WM_INITMENU, WM_INITMENUPOPUP, SC_MINIMIZE, SC_MAXIMIZE, SC_RESTORE, SC_CLOSE } from '../lib/emu/win32/types';
+import { mkFlagsFromButtons, diffButtons, buttonMessage, POINTER_BUTTON_TO_BIT } from '../lib/emu/mouse-buttons';
+import { OrderedInputQueue } from './ordered-input-queue';
 import { MessageBox, MsgBoxIcon, MB_ICONERROR } from './win2k/MessageBox';
 import { MenuBar } from './win2k/MenuBar';
 import { Window, WS_DLGFRAME, WS_CAPTION, WS_SYSMENU, WS_THICKFRAME, WS_MINIMIZEBOX, WS_MAXIMIZEBOX, getBorderWidth } from './win2k/Window';
@@ -49,10 +51,7 @@ interface EmulatorViewProps {
 }
 
 function buildMKFlags(e: PointerEvent): number {
-  let flags = 0;
-  if (e.buttons & 1) flags |= MK_LBUTTON;
-  if (e.buttons & 2) flags |= MK_RBUTTON;
-  return flags;
+  return mkFlagsFromButtons(e.buttons);
 }
 
 function makeLParam(x: number, y: number): number {
@@ -402,6 +401,10 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
   const windowPosInitialized = useRef(false);
   const preMaxState = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
   const mouseIsDown = useRef(false);
+  /** Last PointerEvent.buttons mask forwarded to the emulator */
+  const prevButtons = useRef(0);
+  const inputQueue = useRef<OrderedInputQueue>(null as unknown as OrderedInputQueue);
+  if (!inputQueue.current) inputQueue.current = new OrderedInputQueue();
   const desktopRef = useRef<HTMLDivElement>(null);
   const [resetCount, setResetCount] = useState(0);
   const [windowReady, setWindowReady] = useState(false);
@@ -1187,12 +1190,13 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
     return () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); };
   }, [canvasSize, applyCanvasToEmu]);
 
-  const handlePointerEvent = useCallback((e: PointerEvent, msg: number) => {
+  /** Resolve the target window and client coords for a pointer position, or null if input is blocked. */
+  const resolvePointerTarget = useCallback((e: PointerEvent, isMove = false): { hwnd: number; lParam: number; x: number; y: number } | null => {
     const emu = emuRef.current;
-    if (!emu || !emu.mainWindow) return;
+    if (!emu || !emu.mainWindow) return null;
     // Block mouse events while a modal dialog/MessageBox is showing
-    if (emu.messageBoxes.length > 0) return;
-    if (emu.dialogState) return;
+    if (emu.messageBoxes.length > 0) return null;
+    if (emu.dialogState) return null;
     // Resume AudioContext if suspended (user gesture)
     if (emu.audioContext?.state === 'suspended') emu.audioContext.resume();
 
@@ -1200,11 +1204,10 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
     const rect = canvas.getBoundingClientRect();
     const x = Math.round((e.clientX - rect.left) * canvas.width / rect.width);
     const y = Math.round((e.clientY - rect.top) * canvas.height / rect.height);
-    const wParam = buildMKFlags(e);
     if (emu.capturedWindow) {
       // Auto-release capture when no buttons pressed and cursor is outside the
       // captured window (matches Windows behavior for WM_MOUSEMOVE tracking)
-      if (msg === WM_MOUSEMOVE && e.buttons === 0) {
+      if (isMove && e.buttons === 0) {
         const cw = emu.handles.get<WindowInfo>(emu.capturedWindow);
         if (cw) {
           let ox = 0, oy = 0;
@@ -1232,30 +1235,64 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
         ox += w.x; oy += w.y;
         hwnd = w.parent;
       }
-      emu.postMessage(emu.capturedWindow, msg, wParam, makeLParam(x - ox, y - oy));
-    } else {
-      // Hit-test to find the correct child window and convert coordinates
-      const hit = emu.windowFromPoint(x, y);
-      emu.postMessage(hit.hwnd, msg, wParam, makeLParam(hit.x, hit.y));
+      return { hwnd: emu.capturedWindow, lParam: makeLParam(x - ox, y - oy), x, y };
     }
+    // Hit-test to find the correct child window and convert coordinates
+    const hit = emu.windowFromPoint(x, y);
+    return { hwnd: hit.hwnd, lParam: makeLParam(hit.x, hit.y), x, y };
   }, []);
+
+  const handlePointerEvent = useCallback((e: PointerEvent, msg: number) => {
+    const target = resolvePointerTarget(e, msg === WM_MOUSEMOVE);
+    if (!target) return;
+    emuRef.current!.postMessage(target.hwnd, msg, buildMKFlags(e), target.lParam);
+  }, [resolvePointerTarget]);
+
+  /**
+   * Forward button changes since the last event. Chorded presses/releases arrive as pointermove,
+   * so every pointer event is diffed against the previous buttons mask. Releases are delayed by
+   * two frames (pressed-state feedback) while keeping overall order.
+   */
+  const syncPointerButtons = useCallback((e: PointerEvent) => {
+    const next = e.buttons;
+    const transitions = diffButtons(prevButtons.current, next);
+    if (transitions.length === 0) return;
+    prevButtons.current = next;
+    const saved = { clientX: e.clientX, clientY: e.clientY, buttons: next } as PointerEvent;
+    const time = e.timeStamp || performance.now();
+    for (const t of transitions) {
+      inputQueue.current.push(() => {
+        const emu = emuRef.current;
+        const target = resolvePointerTarget(saved);
+        if (!emu || !target) return;
+        if (!t.pressed) emu.postMessage(target.hwnd, WM_MOUSEMOVE, buildMKFlags(saved), target.lParam);
+        const msg = buttonMessage(emu, t, target.hwnd, target.x, target.y, time);
+        emu.postMessage(target.hwnd, msg, buildMKFlags(saved), target.lParam);
+      }, !t.pressed);
+    }
+  }, [resolvePointerTarget]);
+
+  const onCanvasPointerDown = useCallback((e: PointerEvent) => {
+    e.preventDefault();
+    mouseIsDown.current = true;
+    // A release outside the page may have been missed: the pressed button must register as a press
+    prevButtons.current &= ~POINTER_BUTTON_TO_BIT[e.button];
+    syncPointerButtons(e);
+  }, [syncPointerButtons]);
 
   // Document-level mouse listeners for SetCapture support (drag over overlays)
   useEffect(() => {
     const onDocMouseMove = (e: PointerEvent) => {
       if (!mouseIsDown.current || !canvasRef.current) return;
-      handlePointerEvent(e, WM_MOUSEMOVE);
+      // Chorded button changes are reported as pointermove
+      if (e.buttons !== prevButtons.current) syncPointerButtons(e);
+      const saved = { clientX: e.clientX, clientY: e.clientY, buttons: e.buttons } as PointerEvent;
+      inputQueue.current.push(() => handlePointerEvent(saved, WM_MOUSEMOVE));
     };
     const onDocMouseUp = (e: PointerEvent) => {
       if (!mouseIsDown.current || !canvasRef.current) return;
-      mouseIsDown.current = false;
-      const btn = e.button;
-      const saved = { clientX: e.clientX, clientY: e.clientY, buttons: e.buttons } as PointerEvent;
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        handlePointerEvent(saved, WM_MOUSEMOVE);
-        if (btn === 0) handlePointerEvent(saved, WM_LBUTTONUP);
-        else if (btn === 2) handlePointerEvent(saved, WM_RBUTTONUP);
-      }));
+      syncPointerButtons(e);
+      if (e.buttons === 0) mouseIsDown.current = false;
     };
     document.addEventListener('pointermove', onDocMouseMove);
     document.addEventListener('pointerup', onDocMouseUp);
@@ -1263,7 +1300,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
       document.removeEventListener('pointermove', onDocMouseMove);
       document.removeEventListener('pointerup', onDocMouseUp);
     };
-  }, [handlePointerEvent]);
+  }, [handlePointerEvent, syncPointerButtons]);
 
   // Keyboard input — post WM_KEYDOWN/WM_KEYUP/WM_CHAR to emulator
   useEffect(() => {
@@ -1627,10 +1664,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
           style={{ width: '100%', height: '100%' }}
           onPointerDown={(e) => {
             if (e.target !== e.currentTarget) return;
-            e.preventDefault();
-            mouseIsDown.current = true;
-            if (e.button === 0) handlePointerEvent(e, e.detail >= 2 ? WM_LBUTTONDBLCLK : WM_LBUTTONDOWN);
-            else if (e.button === 2) handlePointerEvent(e, e.detail >= 2 ? WM_RBUTTONDBLCLK : WM_RBUTTONDOWN);
+            onCanvasPointerDown(e);
           }}
           onContextMenu={(e) => e.preventDefault()}
         >
@@ -1651,12 +1685,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
             <canvas
               ref={canvasRef}
               style={{ imageRendering: 'pixelated', cursor: 'var(--win2k-cursor)', display: 'block', position: 'relative', zIndex: 0, backgroundColor: 'white' }}
-              onPointerDown={(e) => {
-                e.preventDefault();
-                mouseIsDown.current = true;
-                if (e.button === 0) handlePointerEvent(e, e.detail >= 2 ? WM_LBUTTONDBLCLK : WM_LBUTTONDOWN);
-                else if (e.button === 2) handlePointerEvent(e, e.detail >= 2 ? WM_RBUTTONDBLCLK : WM_RBUTTONDOWN);
-              }}
+              onPointerDown={onCanvasPointerDown}
               onPointerMove={(e) => {
                 if (mdiDrag.current || mdiResize.current) return;
                 if (!mouseIsDown.current) handlePointerEvent(e, WM_MOUSEMOVE);

@@ -9,6 +9,8 @@ import {
   SM_CXSIZE, SM_CYSIZE,
   SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
   SYS_COLORS,
+  SM_CXDOUBLECLK, SM_CYDOUBLECLK, SM_CXDRAG, SM_CYDRAG, SM_CMOUSEBUTTONS,
+  DEFAULT_DOUBLE_CLICK_TIME, DEFAULT_DRAG_CX, DEFAULT_DRAG_CY, DEFAULT_MOUSE_BUTTONS,
 } from '../types';
 
 interface DeferWindowPosEntry { hWnd: number; x: number; y: number; cx: number; cy: number; uFlags: number }
@@ -18,7 +20,13 @@ export function registerMisc(emu: Emulator): void {
   const user32 = emu.registerDll('USER32.DLL');
 
   // GetDoubleClickTime() — returns milliseconds
-  user32.register('GetDoubleClickTime', 0, () => 500);
+  user32.register('GetDoubleClickTime', 0, () => emu.doubleClickTime);
+  // SetDoubleClickTime(uInterval) — 0 restores the default
+  user32.register('SetDoubleClickTime', 1, () => {
+    const v = emu.readArg(0);
+    emu.doubleClickTime = v || DEFAULT_DOUBLE_CLICK_TIME;
+    return 1;
+  });
 
   // DragObject(hwndParent, hwndFrom, wFmt, dwData, hcur) — 5 args
   user32.register('DragObject', 5, () => 0);
@@ -39,6 +47,11 @@ export function registerMisc(emu: Emulator): void {
       case SM_XVIRTUALSCREEN: case SM_YVIRTUALSCREEN: return 0;
       case SM_CXVIRTUALSCREEN: return emu.screenWidth;
       case SM_CYVIRTUALSCREEN: return emu.screenHeight;
+      case SM_CXDOUBLECLK: return emu.doubleClickCx;
+      case SM_CYDOUBLECLK: return emu.doubleClickCy;
+      case SM_CXDRAG: return DEFAULT_DRAG_CX;
+      case SM_CYDRAG: return DEFAULT_DRAG_CY;
+      case SM_CMOUSEBUTTONS: return DEFAULT_MOUSE_BUTTONS;
       default: return 0;
     }
   });

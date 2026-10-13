@@ -25,6 +25,8 @@ import { emuLoad, emuFindResourceEntry } from './emu-load';
 import { emuTick, emuCallWndProc, emuCallWndProc16, emuCallNative, emuCallCallback } from './emu-exec';
 import { emuTickARM, emuCallWndProcARM } from './emu-exec-arm';
 import { Thread } from './thread';
+import { DoubleClickTracker } from './mouse-buttons';
+import { DEFAULT_DOUBLE_CLICK_TIME, DEFAULT_DOUBLE_CLICK_CX, DEFAULT_DOUBLE_CLICK_CY } from './win32/types';
 
 export { fillTextBitmap } from './emu-render';
 export { Thread } from './thread';
@@ -582,6 +584,12 @@ export class Emulator {
   running = false;
   halted = false;
   traceApi = false;
+  /** Mouse settings (GetDoubleClickTime / SM_CXDOUBLECLK / SM_CYDOUBLECLK) */
+  doubleClickTime = DEFAULT_DOUBLE_CLICK_TIME;
+  doubleClickCx = DEFAULT_DOUBLE_CLICK_CX;
+  doubleClickCy = DEFAULT_DOUBLE_CLICK_CY;
+  /** Double-click detection state of this process's input queue */
+  dblClickTracker = new DoubleClickTracker();
   traceDosInt = false; // gate heavy DOS/DPMI per-INT trace logs
   _crashFired = false;
   _wpEscapeLogged = false;

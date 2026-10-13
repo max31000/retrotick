@@ -59,6 +59,7 @@ export const WM_RBUTTONUP = 0x0205;
 export const WM_RBUTTONDBLCLK = 0x0206;
 export const WM_MBUTTONDOWN = 0x0207;
 export const WM_MBUTTONUP = 0x0208;
+export const WM_MBUTTONDBLCLK = 0x0209;
 export const WM_USER = 0x0400;
 
 // Trackbar messages
@@ -220,6 +221,18 @@ export const SM_XVIRTUALSCREEN = 76;
 export const SM_YVIRTUALSCREEN = 77;
 export const SM_CXVIRTUALSCREEN = 78;
 export const SM_CYVIRTUALSCREEN = 79;
+export const SM_CXDOUBLECLK = 36;
+export const SM_CYDOUBLECLK = 37;
+export const SM_CMOUSEBUTTONS = 43;
+export const SM_CXDRAG = 68;
+export const SM_CYDRAG = 69;
+// Default mouse settings (Windows XP: 500 ms, 4x4 px double-click rectangle, 4 px drag threshold)
+export const DEFAULT_DOUBLE_CLICK_TIME = 500;
+export const DEFAULT_DOUBLE_CLICK_CX = 4;
+export const DEFAULT_DOUBLE_CLICK_CY = 4;
+export const DEFAULT_DRAG_CX = 4;
+export const DEFAULT_DRAG_CY = 4;
+export const DEFAULT_MOUSE_BUTTONS = 3;
 
 // Background modes
 export const TRANSPARENT = 1;

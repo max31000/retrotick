@@ -43,8 +43,9 @@ export function installDomMocks() {
   };
   globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
   globalThis.Image = class { set src(_) {} };
-  globalThis.URL = { createObjectURL: () => 'blob:mock', revokeObjectURL: noop };
-  globalThis.Blob = class { constructor() {} };
+  // Patch (don't replace) URL: the module loader still needs the real constructor
+  globalThis.URL.createObjectURL = () => 'blob:mock';
+  globalThis.URL.revokeObjectURL = noop;
   return mockCanvas;
 }
 
