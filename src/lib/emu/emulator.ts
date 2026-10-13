@@ -816,11 +816,15 @@ export class Emulator {
   // Audio
   audioContext?: AudioContext;
   dosAudio = new DosAudio();
+  /** Stop callbacks of API modules that start audio nodes (e.g. PlaySound); run by destroyAudio(). */
+  audioStopHooks = new Set<() => void>();
 
   /** Stop all playing audio and release audio resources. */
   destroyAudio(): void {
     // DOS audio: OPL2 worklet + PC speaker + SB DMA
     this.dosAudio.destroy();
+    // PlaySound / sndPlaySound and other module-owned sources
+    for (const stop of this.audioStopHooks) stop();
     // Win32 waveOut: stop all active AudioBufferSourceNodes
     for (const [, device] of this.handles.findByType<{ nodes?: AudioBufferSourceNode[] }>('waveout')) {
       if (device.nodes) {

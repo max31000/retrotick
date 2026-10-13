@@ -1,0 +1,15 @@
+{
+	"compilerOptions": {
+		"target": "ES2020",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"declaration": true,
+		"emitDeclarationOnly": true,
+		"skipLibCheck": true,
+		"strict": true,
+		"lib": ["ES2020", "DOM"],
+		"rootDir": "src/runner",
+		"outDir": "runner-pkg/dist"
+	},
+	"files": ["src/runner/types.ts"]
+}

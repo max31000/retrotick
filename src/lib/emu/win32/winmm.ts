@@ -5,6 +5,7 @@ import { rvaToFileOffset } from '../../pe/read';
 const SND_NODEFAULT   = 0x0002;
 const SND_MEMORY      = 0x0004;
 const SND_LOOP        = 0x0008;
+const SND_NOSTOP      = 0x0010;
 const SND_PURGE       = 0x0040;
 const SND_RESOURCE_ID = 0x00040000;
 // SND_RESOURCE includes the SND_MEMORY bit, so it must be tested before SND_MEMORY
@@ -312,15 +313,19 @@ function fillWaveInBuffers(emu: Emulator, hwi: number, device: WaveInDevice): vo
 export function registerWinmm(emu: Emulator): void {
   const winmm = emu.registerDll('WINMM.DLL');
 
-  // Currently playing looping sound source — stop when a new sound plays
-  let loopingSource: AudioBufferSourceNode | null = null;
+  // The sound started by PlaySound/sndPlaySound. Windows plays one such sound at a
+  // time: a new call (or SND_PURGE / NULL) stops it. Also stopped by destroyAudio().
+  let playingSource: AudioBufferSourceNode | null = null;
 
-  function stopLooping() {
-    if (loopingSource) {
-      try { loopingSource.stop(); } catch { /* already stopped */ }
-      loopingSource = null;
+  function stopPlaying() {
+    if (playingSource) {
+      const s = playingSource;
+      playingSource = null;
+      try { s.stop(); } catch { /* already stopped */ }
+      s.disconnect();
     }
   }
+  emu.audioStopHooks.add(stopPlaying);
 
   function ensureAudioContext(): AudioContext | null {
     if (typeof AudioContext === 'undefined') return null;
@@ -401,9 +406,11 @@ export function registerWinmm(emu: Emulator): void {
   function playSoundImpl(pszSound: number, fdwSound: number, isWide: boolean): number {
     // SND_PURGE: stop currently playing sound
     if (fdwSound & SND_PURGE || pszSound === 0) {
-      stopLooping();
+      stopPlaying();
       return 1;
     }
+    // SND_NOSTOP: fail instead of interrupting a sound that is still playing
+    if ((fdwSound & SND_NOSTOP) && playingSource) return 0;
 
     const wavData = resolveWavData(pszSound, fdwSound, isWide);
     if (!wavData) {
@@ -418,17 +425,16 @@ export function registerWinmm(emu: Emulator): void {
       return 0;
     }
 
-    // Stop any currently looping sound
-    stopLooping();
+    // Only one PlaySound sound at a time
+    stopPlaying();
 
     const source = ctx.createBufferSource();
     source.buffer = audioBuffer;
     source.connect(ctx.destination);
 
-    if (fdwSound & SND_LOOP) {
-      source.loop = true;
-      loopingSource = source;
-    }
+    if (fdwSound & SND_LOOP) source.loop = true;
+    playingSource = source;
+    source.onended = () => { if (playingSource === source) playingSource = null; };
 
     source.start(0);
     return 1;

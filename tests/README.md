@@ -37,5 +37,21 @@ BLISS_ASSETS=/path/to/xp-files npx tsx tests/test-xp-sol.mjs
 
 Without assets the tests print `[TEST] SKIP` and exit with code 2.
 `HARNESS_VERBOSE=1` shows emulator logs, `HARNESS_TRACE=1` enables API tracing.
-`test-mouse-buttons.mjs`, `test-locale-ru.mjs`, `test-keyboard-ru.mjs` and
-`test-update-region.mjs`, `test-dc-clip.mjs` need no binaries.
+`test-mouse-buttons.mjs`, `test-locale-ru.mjs`, `test-keyboard-ru.mjs`,
+`test-update-region.mjs` and `test-dc-clip.mjs` need no binaries.
+
+## Runner checks (browser, Playwright for Python)
+
+`tests/runner/check_runner.py` mounts each XP game through `runner-demo.html` (Luna frame,
+Cyrillic menus, menu opens, caption close → `onExit`); `tests/runner/check_scaled.py` runs
+Minesweeper under `transform: scale(0.45)` and verifies click mapping and overlay placement;
+`tests/runner/check_lifecycle.py` checks that settings written at exit persist across a remount and
+that an unmount during start-up stops the emulator. `npx tsx tests/test-runner-units.mjs` needs no browser.
+Start the dev server first (`npx vite --host 127.0.0.1 --port 5291`), then:
+
+```bash
+python tests/runner/check_runner.py --assets /path/to/xp-files --out /tmp/shots [--browser firefox]
+python tests/runner/check_scaled.py --assets /path/to/xp-files --out /tmp/shots
+```
+
+Audio is always muted (Chromium `--mute-audio`, Firefox `media.volume_scale=0.0`).

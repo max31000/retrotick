@@ -5,6 +5,7 @@ import { WS_DLGFRAME } from './win2k/Window';
 import { Window } from './win2k/Window';
 import { renderControlOverlay, effectiveClass } from './ControlOverlay';
 import { DialogClientCanvas } from './DialogClientCanvas';
+import { useUiTheme, themeFaceColor } from './win2k/theme';
 
 export function EmulatorDialog({ info, emuRef, onDismiss, focused = true, flashTrigger, parentRef, lang }: {
   info: DialogInfo;
@@ -20,6 +21,7 @@ export function EmulatorDialog({ info, emuRef, onDismiss, focused = true, flashT
   const [initialPos, setInitialPos] = useState<{ x: number; y: number } | undefined>(undefined);
   const [visible, setVisible] = useState(false);
   const measureRef = useRef<HTMLDivElement>(null);
+  const theme = useUiTheme();
 
   const handleCancel = () => onDismiss(2, info.controlValues);
 
@@ -70,7 +72,7 @@ export function EmulatorDialog({ info, emuRef, onDismiss, focused = true, flashT
   };
 
   return (
-    <div ref={measureRef} onClick={(e) => e.stopPropagation()} onKeyDownCapture={handleKeyDown} style={{ visibility: visible ? 'visible' : 'hidden', position: 'absolute', font: '12px/1 "Tahoma",sans-serif' }}>
+    <div ref={measureRef} onClick={(e) => e.stopPropagation()} onKeyDownCapture={handleKeyDown} style={{ visibility: visible ? 'visible' : 'hidden', position: 'absolute', font: theme.name === 'luna' ? '11px/1 var(--bliss-luna-font-dlg)' : '12px/1 "Tahoma",sans-serif' }}>
       <Window
         title={info.title}
         style={info.style | WS_DLGFRAME}
@@ -78,12 +80,13 @@ export function EmulatorDialog({ info, emuRef, onDismiss, focused = true, flashT
         clientH={info.height}
         focused={focused}
         draggable
+        isDialog
         initialPos={initialPos}
         flashTrigger={flashTrigger}
         lang={lang}
         onClose={handleCancel}
       >
-          <div style={{ width: '100%', height: '100%', background: '#D4D0C8', position: 'relative' }}>
+          <div style={{ width: '100%', height: '100%', background: themeFaceColor(theme), position: 'relative' }}>
             <DialogClientCanvas hwnd={info.hwnd} width={info.width} height={info.height} emuRef={emuRef} />
             {overlays.map((ctrl) => {
               const rendered = renderControlOverlay(ctrl, dialogEmuRef.current, setPressedControl, pressedControl);

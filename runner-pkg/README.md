@@ -1,0 +1,106 @@
+# @bliss/retrotick-runner
+
+Runs an original Win32 game (e.g. Windows XP `sol.exe`) inside a host element using the
+RetroTick emulator. Framework-agnostic: the emulator UI is a self-contained Preact island
+rendered into a child of the host, so it works under React, Vue or plain DOM.
+
+No Microsoft files are included — the host supplies the executable, DLLs and fonts.
+
+## mountGame
+
+```ts
+import { mountGame } from '@bliss/retrotick-runner';
+
+const handle = await mountGame(hostDiv, {
+  exe: await (await fetch(solUrl)).arrayBuffer(),
+  exeName: 'sol.exe',
+  files: { 'cards.dll': cardsDllBuffer },
+  lcid: 0x419,                       // default: ru-RU (ANSI 1251 / OEM 866)
+  fonts: { tahoma: tahomaUrl, micross: microssUrl, trebucbd: trebucbdUrl },
+  persistNamespace: 'sol',           // IndexedDB: registry, INI files, D:\ (default: exeName)
+  onExit: () => navigate('/'),       // close button, «Выход», ExitProcess
+  onTitleChange: (t) => (document.title = t),
+});
+handle.focus();     // keyboard focus into the game (done automatically after mount)
+handle.unmount();   // stop the emulator and clean up
+```
+
+Behaviour: one top-level window in the Windows XP Luna frame, centered in the host
+(`host` should have a size, e.g. `position: relative; height: 100%`); the emulated
+screen size defaults to the host size (`screen` overrides it). Maximize is disabled and the
+window cannot be moved or resized. While focus is inside the game, F1–F12, Space and the
+arrow keys are not passed to the browser. No desktop, taskbar or missing-DLL popups.
+
+Options beyond contract C1: `theme: 'win2k'` (debug), `onMinimize()` (default: no-op).
+Other exports: `registerXpFonts(fonts)`, `LunaFrame`, `LUNA_CSS`.
+
+Notes: the Luna system colours are applied to the emulator's global colour table while a
+game is mounted (one game per page at a time). Modal dialogs are `position: fixed`, so don't
+put the host inside a CSS `transform` (use `zoom` or scale the canvas instead).
+
+## LunaFrame (frame + menu bar for pages that draw their own window)
+
+A light entry with no emulator code:
+
+```ts
+import { LunaFrame } from '@bliss/retrotick-runner/luna';   // ~4 KB gzip
+LunaFrame.inject();                 // adds <style id="bliss-luna-css"> once
+// or: import '@bliss/retrotick-runner/luna.css';
+```
+
+Markup (the runner itself renders exactly this structure):
+
+```html
+<div class="bliss-luna-root">                         <!-- fonts/cursor; optional -->
+  <div class="bliss-luna-window">                     <!-- + bliss-luna-inactive, bliss-luna-dialog -->
+    <div class="bliss-luna-titlebar">
+      <span class="bliss-luna-title-icon"><img src="icon16.png" alt=""></span>
+      <span class="bliss-luna-title">3D Пинбол для Windows — Space Cadet</span>
+      <span class="bliss-luna-controls">
+        <button class="bliss-luna-btn bliss-luna-btn-min" aria-label="Свернуть"></button>
+        <button class="bliss-luna-btn bliss-luna-btn-max" disabled aria-label="Развернуть"></button>
+        <button class="bliss-luna-btn bliss-luna-btn-close" aria-label="Закрыть"></button>
+      </span>
+    </div>
+    <div class="bliss-luna-menubar">
+      <div class="bliss-luna-menubar-cell">           <!-- position: relative anchor for the popup -->
+        <div class="bliss-luna-menu-title bliss-luna-open">Игра</div>
+        <div class="bliss-luna-menu-popup" style="left:0; top:100%">
+          <div class="bliss-luna-menu-entry bliss-luna-hl">
+            <span class="bliss-luna-menu-text">Новая игра</span><span class="bliss-luna-menu-accel">F2</span>
+          </div>
+          <div class="bliss-luna-menu-sep"></div>
+          <div class="bliss-luna-menu-entry bliss-luna-disabled"><span class="bliss-luna-menu-text">Пауза</span></div>
+          <div class="bliss-luna-menu-entry"><span class="bliss-luna-menu-check"></span><span class="bliss-luna-menu-text">Звук</span></div>
+          <div class="bliss-luna-menu-entry"><span class="bliss-luna-menu-text">Параметры</span><span class="bliss-luna-menu-arrow"></span></div>
+        </div>
+      </div>
+    </div>
+    <div class="bliss-luna-client" style="width:640px; height:480px"><canvas></canvas></div>
+  </div>
+</div>
+```
+
+| Class | Meaning |
+|---|---|
+| `bliss-luna-window` | window frame (4px blue frame, rounded top); modifiers `bliss-luna-inactive` (inactive colours), `bliss-luna-dialog` (3px dialog frame, 29px caption) |
+| `bliss-luna-titlebar`, `-title-icon`, `-title` | caption bar (30px), 16×16 icon, Trebuchet MS Bold 13px text |
+| `bliss-luna-controls`, `bliss-luna-btn` + `-btn-min` / `-btn-max` / `-btn-restore` / `-btn-help` / `-btn-close` | 21×21 caption buttons; `disabled` (or `bliss-luna-disabled`) greys the glyph; `bliss-luna-pressed` forces the pressed look |
+| `bliss-luna-menubar`, `-menubar-cell`, `-menu-title` (+ `bliss-luna-open`, `bliss-luna-disabled`) | menu bar (Tahoma 8pt, #ECE9D8) and its items; the open item is #316AC5 |
+| `bliss-luna-menu-popup`, `-menu-entry` (+ `bliss-luna-hl`, `bliss-luna-disabled`, `bliss-luna-default`), `-menu-text`, `-menu-accel`, `-menu-check`, `-menu-arrow`, `-menu-sep` | white popup menu, #316AC5 highlight, check mark, submenu arrow, separator |
+| `bliss-luna-client` | client area (face colour background) |
+| `bliss-luna-button` (+ `bliss-luna-default`, `bliss-luna-pressed`, `bliss-luna-disabled`) | XP push button (put it in a 75×23 box) |
+| `bliss-luna-check`, `bliss-luna-radio` (+ `bliss-luna-checked`, `bliss-luna-disabled`) | 13×13 check box / radio button |
+| `bliss-luna-face` | dialog face colour #ECE9D8 |
+| `bliss-luna-root` (+ `bliss-luna-cues`) | base font and cursor; mnemonic underlines (`<u>`) are hidden unless `bliss-luna-cues` is set (XP default "hide until Alt") |
+
+CSS variables (on `:root`): `--bliss-luna-font-ui`, `--bliss-luna-font-dlg`, `--bliss-luna-font-caption`,
+`--bliss-luna-face`, `--bliss-luna-highlight`, `--bliss-luna-graytext`.
+Register the XP fonts (`registerXpFonts` from the main entry, or your own `@font-face` for
+`Tahoma`, `Microsoft Sans Serif`, `Trebuchet MS` bold) for pixel-faithful text.
+
+## Build
+
+In the RetroTick repository: `npm run build:runner` (output `runner-pkg/dist`),
+`npm run pack:runner` (→ `retrotick-runner-<version>.tgz` in the repository root).
+Releases: pushing a tag `runner-vX.Y.Z` builds and attaches `retrotick-runner-X.Y.Z.tgz`.

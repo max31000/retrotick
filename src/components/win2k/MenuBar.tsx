@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from 'preact/hooks';
 import { disabledTextStyle } from './styles';
 import type { MenuResult, MenuItem } from '../../lib/pe/types';
 import { formatMnemonic } from '../../lib/format';
+import { useIsLuna } from './theme';
+import { LunaMenuDropdownBody, LunaMenuBarBody } from './luna/LunaMenu';
 
 export function MenuDropdown({ items, onCommand, onClose, isSubmenu, x, y }: {
   items: MenuItem[];
@@ -15,22 +17,45 @@ export function MenuDropdown({ items, onCommand, onClose, isSubmenu, x, y }: {
   const [openSub, setOpenSub] = useState<number | null>(null);
   const [flipX, setFlipX] = useState(false);
   const [flipY, setFlipY] = useState(false);
+  /** Own size in local CSS pixels (unscaled), for flipping fixed menus */
+  const [size, setSize] = useState({ w: 0, h: 0 });
   const ref = useRef<HTMLDivElement>(null);
+  const luna = useIsLuna();
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    // Overflow is checked in viewport space; the flipped position is computed in the
+    // menu's own coordinate space (x/y may be relative to a scaled containing block).
     const rect = el.getBoundingClientRect();
+    setSize({ w: el.offsetWidth, h: el.offsetHeight });
     if (rect.right > window.innerWidth) setFlipX(true);
     if (rect.bottom > window.innerHeight) setFlipY(true);
   }, []);
 
   const hasAbsPos = x !== undefined && y !== undefined;
   const posStyle = hasAbsPos
-    ? { left: flipX ? undefined : x, right: flipX ? (window.innerWidth - x) : undefined, top: flipY ? undefined : y, bottom: flipY ? (window.innerHeight - y) : undefined }
+    ? { left: flipX ? Math.max(0, x - size.w) : x, top: flipY ? Math.max(0, y - size.h) : y }
     : isSubmenu
       ? { ...(flipX ? { right: '100%' } : { left: '100%' }), ...(flipY ? { bottom: 0 } : { top: 0 }) }
       : { left: 0, ...(flipY ? { bottom: '100%' } : { top: '100%' }) };
+
+  if (luna) {
+    return (
+      <LunaMenuDropdownBody
+        divRef={ref}
+        items={items}
+        posStyle={{ position: hasAbsPos ? 'fixed' : 'absolute', ...posStyle }}
+        hoverIdx={hoverIdx}
+        openSub={openSub}
+        setHoverIdx={setHoverIdx}
+        setOpenSub={setOpenSub}
+        onCommand={onCommand}
+        onClose={onClose}
+        renderSub={(sub) => <MenuDropdown items={sub} onCommand={onCommand} onClose={onClose} isSubmenu />}
+      />
+    );
+  }
 
   return (
     <div
@@ -104,6 +129,7 @@ export function MenuDropdown({ items, onCommand, onClose, isSubmenu, x, y }: {
 
 export function MenuBar({ menus, onCommand, onFocus, onMenuOpen }: { menus: MenuResult[]; onCommand: (id: number) => void; onFocus?: () => void; onMenuOpen?: (index: number) => void }) {
   const [openIdx, setOpenIdx] = useState<number | null>(null);
+  const luna = useIsLuna();
 
   useEffect(() => {
     if (openIdx === null) return;
@@ -114,6 +140,19 @@ export function MenuBar({ menus, onCommand, onFocus, onMenuOpen }: { menus: Menu
 
   if (menus.length === 0) return null;
   const menu = menus[0].menu;
+  if (luna) {
+    return (
+      <LunaMenuBarBody
+        items={menu.items}
+        openIdx={openIdx}
+        setOpenIdx={setOpenIdx}
+        onCommand={onCommand}
+        onFocus={onFocus}
+        onMenuOpen={onMenuOpen}
+        renderDropdown={(sub) => <MenuDropdown items={sub} onCommand={onCommand} onClose={() => setOpenIdx(null)} />}
+      />
+    );
+  }
 
   return (
     <div

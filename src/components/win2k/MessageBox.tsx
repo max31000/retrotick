@@ -3,7 +3,9 @@ import { useLayoutEffect } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import { Window, WS_CAPTION, WS_SYSMENU } from './Window';
 import { Button } from './Button';
-import { t } from '../../lib/regional-settings';
+import type { UiStrings } from '../../lib/regional-settings';
+import { useIsLuna, useUiStrings } from './theme';
+import { LunaMsgBoxIcon } from './luna/LunaIcons';
 
 // --- Constants ---
 export const MB_OK = 0x00;
@@ -28,6 +30,7 @@ export const IDNO = 7;
 
 // --- Icons ---
 export function MsgBoxIcon({ type }: { type: number }) {
+  if (useIsLuna()) return <LunaMsgBoxIcon type={type} />;
   const icon = type & 0xF0;
   if (icon === MB_ICONERROR) {
     return (
@@ -65,8 +68,7 @@ export function MsgBoxIcon({ type }: { type: number }) {
 }
 
 // --- Button configs ---
-function getMsgBoxButtons(type: number): { label: string; id: number }[] {
-  const s = t();
+function getMsgBoxButtons(type: number, s: UiStrings): { label: string; id: number }[] {
   const buttons = type & 0x0F;
   switch (buttons) {
     case MB_OK: return [{ label: s.ok, id: IDOK }];
@@ -92,7 +94,8 @@ export function MessageBox({ caption, text, type, icon, onDismiss, focused = tru
   flashTrigger?: number;
   parentRef?: { current: HTMLDivElement | null };
 }) {
-  const buttons = type != null ? getMsgBoxButtons(type) : [{ label: t().ok, id: IDOK }];
+  const strings = useUiStrings();
+  const buttons = type != null ? getMsgBoxButtons(type, strings) : [{ label: strings.ok, id: IDOK }];
   const defaultId = buttons[0].id;
   const [initialPos, setInitialPos] = useState<{ x: number; y: number } | undefined>(undefined);
   const [visible, setVisible] = useState(false);
@@ -118,6 +121,8 @@ export function MessageBox({ caption, text, type, icon, onDismiss, focused = tru
         style={WS_CAPTION | WS_SYSMENU}
         focused={focused}
         draggable
+        isDialog
+        className="bliss-luna-messagebox"
         initialPos={initialPos}
         flashTrigger={flashTrigger}
         onClose={() => onDismiss(IDCANCEL)}

@@ -26,3 +26,7 @@ dist-ssr
 examples/
 /test-*.mjs
 .env
+
+# runner package tarballs
+runner-pkg/*.tgz
+/retrotick-runner-*.tgz

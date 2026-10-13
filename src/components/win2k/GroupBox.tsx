@@ -1,4 +1,5 @@
 import type { ComponentChildren } from 'preact';
+import { useUiTheme, themeFaceColor } from './theme';
 
 interface GroupBoxProps {
   children: ComponentChildren;
@@ -10,7 +11,17 @@ interface GroupBoxProps {
 export function GroupBox({ children, label, fontCSS, bgColor }: GroupBoxProps) {
   const m = fontCSS.match(/^(\d+)px/);
   const frameTop = Math.round((m ? parseInt(m[1]) : 11) / 2);
-  const bg = bgColor || '#D4D0C8';
+  const theme = useUiTheme();
+  const bg = bgColor || themeFaceColor(theme);
+  if (theme.name === 'luna') {
+    return (
+      <>
+        <div class="bliss-luna-groupbox-frame" style={{ top: frameTop }} />
+        <span class="bliss-luna-groupbox-label" style={{ left: frameTop + 2, background: bg, font: fontCSS }}>{label}</span>
+        {children}
+      </>
+    );
+  }
 
   return (
     <>
