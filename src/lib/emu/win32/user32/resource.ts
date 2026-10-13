@@ -1,4 +1,6 @@
 import type { Emulator } from '../../emulator';
+import { SC_FIRST } from '../constants-ctl';
+import type { WindowInfo } from './types';
 import type { AccelEntry } from '../../../pe/types';
 import { rvaToFileOffset } from '../../../pe/read';
 import { WM_KEYDOWN, WM_SYSKEYDOWN, WM_COMMAND, WM_SYSCOMMAND } from '../types';
@@ -323,9 +325,10 @@ export function registerResource(emu: Emulator): void {
         if (vKey !== accel.key) continue;
 
         // Check modifier state
-        const shiftDown = emu.keyStates.has(0x10);
-        const ctrlDown = emu.keyStates.has(0x11);
-        const altDown = emu.keyStates.has(0x12);
+        const ks = emu.msgKeyState ?? emu.keyStates;
+        const shiftDown = ks.has(0x10);
+        const ctrlDown = ks.has(0x11);
+        const altDown = ks.has(0x12);
 
         if (!!(accel.fVirt & FSHIFT) !== shiftDown) continue;
         if (!!(accel.fVirt & FCONTROL) !== ctrlDown) continue;
@@ -335,11 +338,15 @@ export function registerResource(emu: Emulator): void {
         if (vKey !== accel.key) continue;
       }
 
-      // Match found — send WM_COMMAND (or WM_SYSCOMMAND for Alt accelerators)
-      const msg = (accel.fVirt & FALT) ? WM_SYSCOMMAND : WM_COMMAND;
+      // Match found — WM_COMMAND, or WM_SYSCOMMAND only when the command is a window-menu
+      // (SC_*) item; the Alt modifier does not matter (MSDN TranslateAccelerator).
+      const msg = accel.cmd >= SC_FIRST ? WM_SYSCOMMAND : WM_COMMAND;
       // wParam: HIWORD=1 (accelerator), LOWORD=cmd
       const wParam = (1 << 16) | accel.cmd;
-      emu.postMessage(hWnd, msg, wParam, 0);
+      // TranslateAccelerator sends the command straight to the window procedure
+      const target = emu.handles.get<WindowInfo>(hWnd);
+      if (target?.wndProc) emu.callWndProc(target.wndProc, hWnd, msg, wParam, 0);
+      else emu.postMessage(hWnd, msg, wParam, 0);
       return 1;
     }
 

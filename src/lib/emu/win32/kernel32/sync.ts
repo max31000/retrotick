@@ -1,5 +1,8 @@
 import type { Emulator } from '../../emulator';
-import { emuCompleteThunk } from '../../emu-exec';
+import { emuCompleteThunk, scheduleImmediateFor } from '../../emu-exec';
+
+/** Consecutive short Sleeps resumed without waiting for a frame before one frame yield */
+const SLEEP_FRAME_YIELD_EVERY = 8;
 
 export function registerSync(emu: Emulator): void {
   const kernel32 = emu.registerDll('KERNEL32.DLL');
@@ -164,8 +167,17 @@ export function registerSync(emu: Emulator): void {
     setTimeout(emu.captureThreadResume(() => {
       emu.waitingForMessage = false;
       emuCompleteThunk(emu, 0, stackBytes);
+      // Resume right away: waiting for the next animation frame would stretch every
+      // short Sleep to >= 1 frame (and much longer where rAF is throttled), making
+      // Sleep-paced animations (card deals) several times slower than on Windows.
+      // Every few consecutive Sleeps, and always in a hidden tab, go through
+      // requestAnimationFrame so the page still renders and background tabs idle.
       if (emu.running && !emu.halted) {
-        requestAnimationFrame(emu.tick);
+        const e = emu as typeof emu & { _sleepStreak?: number };
+        e._sleepStreak = (e._sleepStreak ?? 0) + 1;
+        const hidden = typeof document !== 'undefined' && document.hidden;
+        if (hidden || e._sleepStreak % SLEEP_FRAME_YIELD_EVERY === 0) requestAnimationFrame(emu.tick);
+        else scheduleImmediateFor(emu, emu.tick);
       }
     }), dwMilliseconds);
     return undefined;

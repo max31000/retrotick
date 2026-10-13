@@ -4,6 +4,7 @@ import type { WindowInfo } from '../lib/emu/win32/user32/index';
 import { WS_DLGFRAME } from './win2k/Window';
 import { Window } from './win2k/Window';
 import { renderControlOverlay, effectiveClass } from './ControlOverlay';
+import { DialogClientCanvas } from './DialogClientCanvas';
 
 export function EmulatorDialog({ info, emuRef, onDismiss, focused = true, flashTrigger, parentRef, lang }: {
   info: DialogInfo;
@@ -82,7 +83,8 @@ export function EmulatorDialog({ info, emuRef, onDismiss, focused = true, flashT
         lang={lang}
         onClose={handleCancel}
       >
-          <div style={{ width: '100%', height: '100%', background: '#D4D0C8' }}>
+          <div style={{ width: '100%', height: '100%', background: '#D4D0C8', position: 'relative' }}>
+            <DialogClientCanvas hwnd={info.hwnd} width={info.width} height={info.height} emuRef={emuRef} />
             {overlays.map((ctrl) => {
               const rendered = renderControlOverlay(ctrl, dialogEmuRef.current, setPressedControl, pressedControl);
               // Wrap OK (id=1) and Cancel (id=2) buttons to also dismiss the dialog.

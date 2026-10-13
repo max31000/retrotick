@@ -1,3 +1,6 @@
+import type { Region } from '../../region';
+import type { DCLayer } from './dc-clip';
+
 export interface DCInfo {
   canvas: HTMLCanvasElement | OffscreenCanvas;
   ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -35,6 +38,12 @@ export interface DCInfo {
   /** Number of unmatched SaveDC calls on this DC (like Wine's save_level).
    *  Used by releaseChildDC to pop all remaining saves when the DC is released. */
   saveLevel?: number;
+  /** Canvas save layers made for this DC (SaveDC / clip region / BeginPaint clip). */
+  layers?: DCLayer[];
+  /** Application clip region (SelectClipRgn & co), DC coordinates; null = none. */
+  clipRgn?: Region | null;
+  /** Update region clip while painting (BeginPaint), DC coordinates. */
+  visRgn?: Region | null;
 }
 
 export interface BitmapInfo {

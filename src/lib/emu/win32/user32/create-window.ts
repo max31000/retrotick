@@ -3,9 +3,10 @@ import { type Emulator, getNextCascadePos } from '../../emulator';
 import type { WindowInfo } from './types';
 import { getClientSize, clampToMinTrackSize } from './_helpers';
 import { buildMenuHandleTree } from './menu';
+import { sendCreateSizeMessages } from './window-notify';
 import {
   WM_CREATE, WM_NCCREATE, WM_NCCALCSIZE, WM_SHOWWINDOW,
-  WM_SIZE, WM_ACTIVATE, WM_ACTIVATEAPP, WM_ERASEBKGND, WM_PAINT, WM_DESTROY,
+  WM_SIZE, WM_ACTIVATE, WM_ACTIVATEAPP, WM_DESTROY,
   WM_NCDESTROY, WM_WINDOWPOSCHANGED,
   CW_USEDEFAULT, HCBT_CREATEWND,
 } from '../types';
@@ -81,6 +82,7 @@ export function registerCreateWindow(emu: Emulator): void {
     const wnd: WindowInfo = {
       hwnd: 0,
       classInfo: cls,
+      unicode: cls.wndProc ? !!cls.unicode : false,
       wndProc: cls.wndProc,
       parent: hParent,
       x, y, width, height,
@@ -172,6 +174,7 @@ export function registerCreateWindow(emu: Emulator): void {
       emu.handles.free(hwnd);
       return 0;
     }
+    sendCreateSizeMessages(emu, hwnd);
 
     if (!hParent || hParent === 0) emu.onWindowChange?.(wnd);
     return hwnd;
@@ -231,6 +234,7 @@ export function registerCreateWindow(emu: Emulator): void {
 
     const wnd: WindowInfo = {
       hwnd: 0, classInfo: cls,
+      unicode: cls.wndProc ? !!cls.unicode : true,
       wndProc: cls.wndProc,
       parent: hParent,
       x, y, width, height,
@@ -309,6 +313,7 @@ export function registerCreateWindow(emu: Emulator): void {
       emu.handles.free(hwnd);
       return 0;
     }
+    sendCreateSizeMessages(emu, hwnd);
 
     if (!hParent || hParent === 0) emu.onWindowChange?.(wnd);
     return hwnd;
@@ -433,21 +438,6 @@ export function registerCreateWindow(emu: Emulator): void {
     return wasVisible ? 1 : 0;
   });
 
-  user32.register('UpdateWindow', 1, () => {
-    const hwnd = emu.readArg(0);
-    const wnd = emu.handles.get<WindowInfo>(hwnd);
-    if (!wnd) return 0;
-
-    // Only send WM_PAINT if window needs repainting
-    if (wnd.needsPaint) {
-      if (wnd.needsErase) {
-        wnd.needsErase = false;
-        emu.callWndProc(wnd.wndProc, hwnd, WM_ERASEBKGND, emu.getWindowDC(hwnd), 0);
-      }
-      emu.callWndProc(wnd.wndProc, hwnd, WM_PAINT, 0, 0);
-    }
-    return 1;
-  });
 
   // MoveWindow
   user32.register('MoveWindow', 6, () => {

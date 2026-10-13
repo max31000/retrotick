@@ -7,6 +7,7 @@ import {
   PS_SOLID, PS_NULL,
 } from '../types';
 import { STOCK_BASE } from './_helpers';
+import { setClipRegion } from './dc-clip';
 
 export function registerSelect(emu: Emulator): void {
   const gdi32 = emu.registerDll('GDI32.DLL');
@@ -60,6 +61,9 @@ export function registerSelect(emu: Emulator): void {
         dc.ctx = (dc.canvas as OffscreenCanvas).getContext('2d')!;
         dc.ctx.imageSmoothingEnabled = false;
         dc.ctx.drawImage(bmp.canvas, 0, 0);
+        // Resizing the canvas reset its state stack: re-apply the clip region
+        dc.layers = [];
+        if (dc.clipRgn) setClipRegion(dc, dc.clipRgn);
         return old;
       }
     }

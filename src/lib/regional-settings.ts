@@ -159,6 +159,28 @@ const qwertyUsCharMap = buildCharToVK([
   [' ', 0x20, false],
 ]);
 
+// --- ЙЦУКЕН (Russian) layout: Cyrillic letters on the US key positions (same VK codes) ---
+const jcukenPairs: Array<[string, number]> = [
+  ['й', VK_Q], ['ц', VK_W], ['у', VK_E], ['к', VK_R], ['е', VK_T], ['н', VK_Y], ['г', VK_U],
+  ['ш', VK_I], ['щ', VK_O], ['з', VK_P], ['х', VK_OEM_4], ['ъ', VK_OEM_6], ['ф', VK_A],
+  ['ы', VK_S], ['в', VK_D], ['а', VK_F], ['п', VK_G], ['р', VK_H], ['о', VK_J], ['л', VK_K],
+  ['д', VK_L], ['ж', VK_OEM_1], ['э', VK_OEM_7], ['я', VK_Z], ['ч', VK_X], ['с', VK_C],
+  ['м', VK_V], ['и', VK_B], ['т', VK_N], ['ь', VK_M], ['б', VK_OEM_COMMA], ['ю', VK_OEM_PERIOD],
+  ['ё', VK_OEM_3],
+];
+const jcukenRuCharMap = buildCharToVK([
+  ...jcukenPairs.map(([c, vk]) => [c, vk, false] as [string, number, boolean]),
+  ...jcukenPairs.map(([c, vk]) => [c.toUpperCase(), vk, true] as [string, number, boolean]),
+  ['0', 0x30, false], ['1', 0x31, false], ['2', 0x32, false], ['3', 0x33, false],
+  ['4', 0x34, false], ['5', 0x35, false], ['6', 0x36, false], ['7', 0x37, false],
+  ['8', 0x38, false], ['9', 0x39, false],
+  ['.', VK_OEM_2, false], [',', VK_OEM_2, true], ['-', VK_OEM_MINUS, false], ['=', VK_OEM_PLUS, false],
+  ['_', VK_OEM_MINUS, true], ['+', VK_OEM_PLUS, true], ['\\', VK_OEM_5, false], ['/', VK_OEM_5, true],
+  ['!', 0x31, true], ['"', 0x32, true], ['№', 0x33, true], [';', 0x34, true], ['%', 0x35, true],
+  [':', 0x36, true], ['?', 0x37, true], ['*', 0x38, true], ['(', 0x39, true], [')', 0x30, true],
+  [' ', 0x20, false],
+]);
+
 // --- AZERTY FR layout ---
 // Physical key positions map to different VK codes on AZERTY
 
@@ -282,6 +304,13 @@ const KEYBOARD_LAYOUTS: KeyboardLayoutDef[] = [
     charToVK: qwertyUsCharMap,
   },
   {
+    id: 'jcuken-ru',
+    name: 'ЙЦУКЕН (RU)',
+    hkl: 0x04190419,
+    codeToVK: { ...sharedKeys, ...qwertyLetters, ...qwertyPunct },
+    charToVK: jcukenRuCharMap,
+  },
+  {
     id: 'qwerty-jp',
     name: 'QWERTY (JP)',
     hkl: 0x04110411,
@@ -323,6 +352,14 @@ export function getKeyboardLayouts(): readonly KeyboardLayoutDef[] {
   return KEYBOARD_LAYOUTS;
 }
 
+/** Keyboard layout for an emulator: the settings' layout, unless the emulator runs with a
+ *  different configured locale (embedded runner), then that locale's default layout. */
+export function layoutForLcid(configuredLcid: number | undefined): KeyboardLayoutDef {
+  const s = loadSettings();
+  if (configuredLcid && configuredLcid !== s.localeId) return getKeyboardLayout(getLocalePreset(configuredLcid).defaultKeyboard);
+  return getKeyboardLayout(s.keyboardLayout);
+}
+
 export function getKeyboardLayout(id: string): KeyboardLayoutDef {
   return KEYBOARD_LAYOUTS.find(l => l.id === id) || KEYBOARD_LAYOUTS[0];
 }
@@ -359,7 +396,7 @@ export function loadSettings(): RegionalSettings {
       const preset = getLocalePreset(parsed.localeId ?? 0x0409);
       _cachedSettings = {
         localeId: parsed.localeId ?? 0x0409,
-        keyboardLayout: parsed.keyboardLayout ?? 'qwerty-us',
+        keyboardLayout: parsed.keyboardLayout ?? preset.defaultKeyboard,
         decimalSep: parsed.decimalSep ?? '.',
         thousandsSep: parsed.thousandsSep ?? ',',
         shortDateFmt: parsed.shortDateFmt ?? preset.shortDate,

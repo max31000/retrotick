@@ -1,3 +1,4 @@
+import { makeRussianStrings } from './ui-strings-ru';
 // UI translation strings, keyed by LCID
 
 export interface UiStrings {
@@ -1609,6 +1610,7 @@ export const UI_STRINGS: Record<number, UiStrings> = {
   0x0410: it, // Italian (Italy)
   0x0415: pl, // Polish (Poland)
   0x0412: ko, // Korean (Korea)
+  0x0419: makeRussianStrings(en), // Russian (system dialogs only)
 };
 
 export const FALLBACK_STRINGS = en;

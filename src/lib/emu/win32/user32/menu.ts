@@ -34,6 +34,20 @@ function findItemIndex(menu: MenuData, uItem: number, byPosition: boolean): numb
   return menu.items.findIndex(it => it.id === uItem);
 }
 
+/** Locate a menu item; MF_BYCOMMAND searches submenus recursively like USER32
+ *  (Wine MENU_FindItem). Returns the menu that contains the item and its index. */
+function findItem(emu: Emulator, menu: MenuData, uItem: number, byPosition: boolean, depth = 0): { container: MenuData; idx: number } {
+  const idx = findItemIndex(menu, uItem, byPosition);
+  if (idx >= 0 || byPosition || depth > 16) return { container: menu, idx };
+  for (const it of menu.items) {
+    const sub = it.hSubMenu ? getMenuData(emu, it.hSubMenu) : null;
+    if (!sub) continue;
+    const r = findItem(emu, sub, uItem, false, depth + 1);
+    if (r.idx >= 0) return r;
+  }
+  return { container: menu, idx: -1 };
+}
+
 function menuFlagsToState(item: InternalMenuItem): number {
   let state = 0;
   if (item.flags & MF_CHECKED) state |= MFS_CHECKED;
@@ -78,29 +92,7 @@ export function registerMenu(emu: Emulator): void {
 
   // --- Load from resource ---
 
-  user32.register('LoadMenuA', 2, () => {
-    const _hInstance = emu.readArg(0);
-    const menuNamePtr = emu.readArg(1);
-    let menuId: number | string;
-    if (menuNamePtr < 0x10000) {
-      menuId = menuNamePtr;
-    } else {
-      menuId = emu.memory.readCString(menuNamePtr);
-    }
-    return emu.handles.alloc('menu', { menuId, items: [] } as MenuData);
-  });
 
-  user32.register('LoadMenuW', 2, () => {
-    const _hInstance = emu.readArg(0);
-    const menuNamePtr = emu.readArg(1);
-    let menuId: number | string;
-    if (menuNamePtr < 0x10000) {
-      menuId = menuNamePtr;
-    } else {
-      menuId = emu.memory.readUTF16String(menuNamePtr);
-    }
-    return emu.handles.alloc('menu', { menuId, items: [] } as MenuData);
-  });
 
   // --- Set / Get window menu ---
 
@@ -238,9 +230,9 @@ export function registerMenu(emu: Emulator): void {
     const menu = getMenuData(emu, hMenu);
     if (!menu) return 0;
     const byPos = !!(uFlags & MF_BYPOSITION);
-    const idx = findItemIndex(menu, uPosition, byPos);
+    const { container: menuC, idx } = findItem(emu, menu, uPosition, byPos);
     if (idx < 0) return 0;
-    const item = menu.items[idx];
+    const item = menuC.items[idx];
     item.id = uIDNewItem;
     item.flags = uFlags;
     item.hSubMenu = (uFlags & MF_POPUP) ? uIDNewItem : 0;
@@ -259,9 +251,9 @@ export function registerMenu(emu: Emulator): void {
     const menu = getMenuData(emu, hMenu);
     if (!menu) return 0;
     const byPos = !!(uFlags & MF_BYPOSITION);
-    const idx = findItemIndex(menu, uPosition, byPos);
+    const { container: menuC, idx } = findItem(emu, menu, uPosition, byPos);
     if (idx < 0) return 0;
-    const item = menu.items[idx];
+    const item = menuC.items[idx];
     item.id = uIDNewItem;
     item.flags = uFlags;
     item.hSubMenu = (uFlags & MF_POPUP) ? uIDNewItem : 0;
@@ -280,9 +272,9 @@ export function registerMenu(emu: Emulator): void {
     const menu = getMenuData(emu, hMenu);
     if (!menu) return 0;
     const byPos = !!(uFlags & MF_BYPOSITION);
-    const idx = findItemIndex(menu, uPosition, byPos);
+    const { container: menuC, idx } = findItem(emu, menu, uPosition, byPos);
     if (idx < 0) return 0;
-    const removed = menu.items.splice(idx, 1)[0];
+    const removed = menuC.items.splice(idx, 1)[0];
     // DeleteMenu destroys submenus
     if (removed.hSubMenu) {
       emu.handles.free(removed.hSubMenu);
@@ -297,9 +289,9 @@ export function registerMenu(emu: Emulator): void {
     const menu = getMenuData(emu, hMenu);
     if (!menu) return 0;
     const byPos = !!(uFlags & MF_BYPOSITION);
-    const idx = findItemIndex(menu, uPosition, byPos);
+    const { container: menuC, idx } = findItem(emu, menu, uPosition, byPos);
     if (idx < 0) return 0;
-    menu.items.splice(idx, 1);
+    menuC.items.splice(idx, 1);
     // RemoveMenu does NOT destroy submenus
     return 1;
   });
@@ -338,9 +330,9 @@ export function registerMenu(emu: Emulator): void {
     const menu = getMenuData(emu, hMenu);
     if (!menu) return 0xFFFFFFFF;
     const byPos = !!(uFlags & MF_BYPOSITION);
-    const idx = findItemIndex(menu, uId, byPos);
+    const { container: menuC, idx } = findItem(emu, menu, uId, byPos);
     if (idx < 0) return 0xFFFFFFFF;
-    const item = menu.items[idx];
+    const item = menuC.items[idx];
     let state = item.flags & (MF_CHECKED | MF_GRAYED | MF_DISABLED | MF_SEPARATOR);
     if (item.hSubMenu) {
       // For popup items, high byte = item count in submenu
@@ -360,9 +352,9 @@ export function registerMenu(emu: Emulator): void {
     const menu = getMenuData(emu, hMenu);
     if (!menu) return 0;
     const byPos = !!(uFlags & MF_BYPOSITION);
-    const idx = findItemIndex(menu, uIDItem, byPos);
+    const { container: menuC, idx } = findItem(emu, menu, uIDItem, byPos);
     if (idx < 0) return 0;
-    const text = menu.items[idx].text;
+    const text = menuC.items[idx].text;
     if (lpString && cchMax > 0) {
       const bytes = new TextEncoder().encode(text);
       const len = Math.min(bytes.length, cchMax - 1);
@@ -382,9 +374,9 @@ export function registerMenu(emu: Emulator): void {
     const menu = getMenuData(emu, hMenu);
     if (!menu) return 0;
     const byPos = !!(uFlags & MF_BYPOSITION);
-    const idx = findItemIndex(menu, uIDItem, byPos);
+    const { container: menuC, idx } = findItem(emu, menu, uIDItem, byPos);
     if (idx < 0) return 0;
-    const text = menu.items[idx].text;
+    const text = menuC.items[idx].text;
     if (lpString && cchMax > 0) {
       const len = Math.min(text.length, cchMax - 1);
       for (let i = 0; i < len; i++) emu.memory.writeU16(lpString + i * 2, text.charCodeAt(i));
@@ -404,9 +396,9 @@ export function registerMenu(emu: Emulator): void {
     const menu = getMenuData(emu, hMenu);
     if (menu) {
       const byPos = !!(uCheck & MF_BYPOSITION);
-      const idx = findItemIndex(menu, uIDCheckItem, byPos);
+      const { container: menuC, idx } = findItem(emu, menu, uIDCheckItem, byPos);
       if (idx < 0) return 0xFFFFFFFF;
-      const item = menu.items[idx];
+      const item = menuC.items[idx];
       const prev = (item.flags & MF_CHECKED) ? MF_CHECKED : 0;
       if (uCheck & MF_CHECKED) item.flags |= MF_CHECKED;
       else item.flags &= ~MF_CHECKED;
@@ -440,9 +432,9 @@ export function registerMenu(emu: Emulator): void {
     const menu = getMenuData(emu, hMenu);
     if (menu) {
       const byPos = !!(uEnable & MF_BYPOSITION);
-      const idx = findItemIndex(menu, uIDEnableItem, byPos);
+      const { container: menuC, idx } = findItem(emu, menu, uIDEnableItem, byPos);
       if (idx < 0) return 0xFFFFFFFF;
-      const item = menu.items[idx];
+      const item = menuC.items[idx];
       const prev = (item.flags & (MF_GRAYED | MF_DISABLED)) ? MF_GRAYED : 0;
       item.flags &= ~(MF_GRAYED | MF_DISABLED);
       item.flags |= (uEnable & (MF_GRAYED | MF_DISABLED));
@@ -478,10 +470,10 @@ export function registerMenu(emu: Emulator): void {
     if (menu) {
       const byPos = !!(uFlags & MF_BYPOSITION);
       for (let i = idFirst; i <= idLast; i++) {
-        const idx = findItemIndex(menu, i, byPos);
+        const { container: menuC, idx } = findItem(emu, menu, i, byPos);
         if (idx >= 0) {
-          if (i === idCheck) menu.items[idx].flags |= MF_CHECKED;
-          else menu.items[idx].flags &= ~MF_CHECKED;
+          if (i === idCheck) menuC.items[idx].flags |= MF_CHECKED;
+          else menuC.items[idx].flags &= ~MF_CHECKED;
         }
       }
       // Sync to legacy menuItems for React UI
@@ -624,8 +616,8 @@ export function registerMenu(emu: Emulator): void {
     // Clear existing defaults, set new one
     for (const item of menu.items) item.flags &= ~0x1000;
     if (uItem !== 0xFFFFFFFF) {
-      const idx = findItemIndex(menu, uItem, !!fByPos);
-      if (idx >= 0) menu.items[idx].flags |= 0x1000;
+      const { container: menuC, idx } = findItem(emu, menu, uItem, !!fByPos);
+      if (idx >= 0) menuC.items[idx].flags |= 0x1000;
     }
     return 1;
   });

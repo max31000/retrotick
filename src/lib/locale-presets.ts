@@ -315,7 +315,7 @@ export const LOCALE_PRESETS: LocalePreset[] = [
     currencySym: 'р.',
     ansiCodePage: 1251,
     oemCodePage: 866,
-    defaultKeyboard: 'qwerty-us',
+    defaultKeyboard: 'jcuken-ru',
     decimalSep: ',',
     thousandsSep: ' ',
     listSep: ';',

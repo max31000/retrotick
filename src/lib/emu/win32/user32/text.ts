@@ -1,4 +1,5 @@
 import type { Emulator } from '../../emulator';
+import { DT_BOTTOM } from '../constants-ctl';
 import { fillTextBitmap } from '../../emu-render';
 import { decodeMBCS, encodeMBCS } from '../../memory';
 import { formatString, stackArgReader, vaListArgReader } from '../../format';
@@ -96,6 +97,7 @@ function drawTextWrapLines(
   }
   return lines.length > 0 ? lines : [''];
 }
+
 
 export function registerText(emu: Emulator): void {
   const user32 = emu.registerDll('USER32.DLL');
@@ -273,6 +275,7 @@ export function registerText(emu: Emulator): void {
     const DT_SINGLELINE = 0x20;
     const DT_WORDBREAK = 0x10;
     const DT_NOPREFIX = 0x0800;
+    let textHeight = 0;
 
     const font = emu.handles.get<{ height: number }>(dc.selectedFont);
     const fontSize = (font && font.height) ? Math.abs(font.height) : 13;
@@ -308,7 +311,10 @@ export function registerText(emu: Emulator): void {
       let y = top;
       if ((format & DT_VCENTER) && (format & DT_SINGLELINE)) {
         y = (top + bottom - lineH) / 2;
+      } else if ((format & DT_BOTTOM) && (format & DT_SINGLELINE)) {
+        y = bottom - lineH;
       }
+      textHeight = (y - top) + lines.length * lineH;
       for (const line of lines) {
         if (y + lineH > bottom && !(format & DT_SINGLELINE)) break;
         if (opaque) {
@@ -323,7 +329,8 @@ export function registerText(emu: Emulator): void {
       }
     }
 
-    return bottom - top;
+    // DrawText returns the height of the text (offset to its bottom with DT_VCENTER/DT_BOTTOM)
+    return Math.round(textHeight);
   });
 
   // DrawTextW
@@ -420,7 +427,10 @@ export function registerText(emu: Emulator): void {
     let y = top;
     if ((format & DT_VCENTER) && ((format & DT_SINGLELINE) || lines.length === 1)) {
       y = (top + bottom - lineH) / 2;
+    } else if ((format & DT_BOTTOM) && (format & DT_SINGLELINE)) {
+      y = bottom - lineH;
     }
+    const textHeight = (y - top) + lines.length * lineH;
     for (let li = 0; li < lines.length; li++) {
       // Skip lines that start below the rect — but always draw the first line
       // (Windows draws oversized text and clips visually, never skips it entirely)
@@ -436,7 +446,8 @@ export function registerText(emu: Emulator): void {
       y += lineH;
     }
 
-    return bottom - top;
+    // DrawText returns the height of the text (offset to its bottom with DT_VCENTER/DT_BOTTOM)
+    return Math.round(textHeight);
   });
 
   // DrawTextExW — same as DrawTextW but with extra params (DRAWTEXTPARAMS at arg 5)

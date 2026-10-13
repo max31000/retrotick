@@ -1,8 +1,7 @@
 import type { Emulator } from '../../emulator';
 import type { WindowInfo } from './types';
-import { getClientSize } from './_helpers';
 import {
-  WM_PAINT, WM_ERASEBKGND, SIZEOF_PAINTSTRUCT, SYS_COLORS,
+  SYS_COLORS,
   COLOR_BTNHIGHLIGHT, COLOR_3DLIGHT, COLOR_BTNSHADOW, COLOR_3DDKSHADOW,
 } from '../types';
 
@@ -41,61 +40,9 @@ export function registerPaint(emu: Emulator): void {
     return 1;
   });
 
-  user32.register('BeginPaint', 2, () => {
-    const hwnd = emu.readArg(0);
-    const psPtr = emu.readArg(1);
-    const hdc = emu.beginPaint(hwnd);
-    // Validate the region (clear needsPaint)
-    const wndBP = emu.handles.get<WindowInfo>(hwnd);
-    const hadErase = wndBP?.paintFErase ?? false;
-    // needsPaint/painting are now cleared/set in emu.beginPaint()
 
-    // Fill PAINTSTRUCT
-    emu.memory.writeU32(psPtr, hdc);       // hdc
-    emu.memory.writeU32(psPtr + 4, hadErase ? 1 : 0); // fErase
-    // rcPaint — client area dimensions
-    const wnd = emu.handles.get<WindowInfo>(hwnd);
-    const cs = wnd ? getClientSize(wnd.style, wnd.hMenu !== 0, wnd.width, wnd.height) : { cw: 0, ch: 0 };
-    emu.memory.writeU32(psPtr + 8, 0);     // left
-    emu.memory.writeU32(psPtr + 12, 0);    // top
-    emu.memory.writeU32(psPtr + 16, cs.cw);  // right
-    emu.memory.writeU32(psPtr + 20, cs.ch);  // bottom
-    emu.memory.writeU32(psPtr + 24, 0);    // fRestore
-    emu.memory.writeU32(psPtr + 28, 0);    // fIncUpdate
-    // rgbReserved (32 bytes of zero)
-    for (let i = 32; i < SIZEOF_PAINTSTRUCT; i++) emu.memory.writeU8(psPtr + i, 0);
 
-    return hdc;
-  });
 
-  user32.register('EndPaint', 2, () => {
-    const hwnd = emu.readArg(0);
-    const _psPtr = emu.readArg(1);
-    emu.endPaint(hwnd, 0);
-    return 1;
-  });
-
-  user32.register('InvalidateRect', 3, () => {
-    const hwnd = emu.readArg(0);
-    const _rectPtr = emu.readArg(1);
-    const erase = emu.readArg(2);
-    const wnd = emu.handles.get<WindowInfo>(hwnd);
-    if (wnd && !wnd.painting) {
-      wnd.needsPaint = true;
-      if (erase) wnd.needsErase = true;
-    }
-    return 1;
-  });
-
-  user32.register('ValidateRect', 2, () => {
-    const hwnd = emu.readArg(0);
-    const wnd = emu.handles.get<WindowInfo>(hwnd);
-    if (wnd) {
-      wnd.needsPaint = false;
-      wnd.needsErase = false;
-    }
-    return 1;
-  });
 
   // FillRect (USER32, not GDI32)
   user32.register('FillRect', 3, () => {
@@ -285,39 +232,10 @@ export function registerPaint(emu: Emulator): void {
   user32.register('CreateCursor', 7, () => emu.handles.alloc('cursor', {}));
 
   // GetUpdateRect(hWnd, lpRect, bErase) → BOOL
-  user32.register('GetUpdateRect', 3, () => {
-    const _hwnd = emu.readArg(0);
-    const rectPtr = emu.readArg(1);
-    if (rectPtr) {
-      emu.memory.writeU32(rectPtr, 0);
-      emu.memory.writeU32(rectPtr + 4, 0);
-      emu.memory.writeU32(rectPtr + 8, 0);
-      emu.memory.writeU32(rectPtr + 12, 0);
-    }
-    return 0; // no update region
-  });
 
-  user32.register('RedrawWindow', 4, () => {
-    const hwnd = emu.readArg(0);
-    const wnd = emu.handles.get<WindowInfo>(hwnd);
-    if (wnd) { wnd.needsPaint = true; wnd.needsErase = true; }
-    return 1;
-  });
 
   // ScrollWindowEx(hWnd, dx, dy, prcScroll, prcClip, hrgnUpdate, prcUpdate, flags) → int
   // Return SIMPLEREGION (1)
-  user32.register('ScrollWindowEx', 8, () => 1);
 
   // InvalidateRgn(hWnd, hRgn, bErase) → BOOL
-  user32.register('InvalidateRgn', 3, () => {
-    const hwnd = emu.readArg(0);
-    const _hrgnUpdate = emu.readArg(1);
-    const bErase = emu.readArg(2);
-    const wnd = emu.handles.get<WindowInfo>(hwnd);
-    if (wnd && !wnd.painting) {
-      wnd.needsPaint = true;
-      if (bErase) wnd.needsErase = true;
-    }
-    return 1;
-  });
 }

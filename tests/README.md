@@ -37,4 +37,5 @@ BLISS_ASSETS=/path/to/xp-files npx tsx tests/test-xp-sol.mjs
 
 Without assets the tests print `[TEST] SKIP` and exit with code 2.
 `HARNESS_VERBOSE=1` shows emulator logs, `HARNESS_TRACE=1` enables API tracing.
-`test-mouse-buttons.mjs` and `test-locale-ru.mjs` need no binaries.
+`test-mouse-buttons.mjs`, `test-locale-ru.mjs`, `test-keyboard-ru.mjs` and
+`test-update-region.mjs`, `test-dc-clip.mjs` need no binaries.

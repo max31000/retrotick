@@ -68,7 +68,7 @@ export function resolveAssetsDir(envVar = 'BLISS_ASSETS') {
 
 /**
  * Load and start an exe headlessly. Returns { emu, warnings }.
- * opts: { dir, exe, companions: string[], lcid?, maxTicks?, cmdLine? }
+ * opts: { dir, exe, companions: string[], lcid?, maxTicks?, cmdLine?, beforeRun?(emu) }
  */
 export async function startExe(opts) {
   const { Emulator } = await import('../../src/lib/emu/emulator.ts');
@@ -99,6 +99,7 @@ export async function startExe(opts) {
   await emu.load(exeBuf, peInfo, canvas);
   const menus = extractMenus(peInfo, exeBuf);
   if (menus.length > 0) emu.menuItems = menus[0].menu.items;
+  if (opts.beforeRun) opts.beforeRun(emu);
   emu.run();
 
   const restore = () => { console.warn = origWarn; console.log = origLog; };

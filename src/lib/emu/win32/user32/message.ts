@@ -1,11 +1,13 @@
 import type { Emulator } from '../../emulator';
 import type { WindowInfo, TreeViewItem, ListViewColumn, ListViewItem } from './types';
-import { writeMsgStruct, getClientSize } from './_helpers';
+import { writeMsgStruct, isCharMessage, convertCharParam } from './_helpers';
 import { encodeMBCS } from '../../memory';
 import { emuCompleteThunk } from '../../emu-exec';
 import { getNextCascadePos } from '../../emulator';
+import { handleStatusBarMessage } from './statusbar';
+import { validateWindow } from './update-region';
 import {
-  WM_QUIT, WM_PAINT, WM_ERASEBKGND,
+  WM_QUIT, WM_PAINT,
   WM_SETTEXT, WM_GETTEXT, WM_GETTEXTLENGTH,
   WM_CREATE, WM_NCCREATE, WM_NCCALCSIZE,
   WM_TIMER, PM_REMOVE, CW_USEDEFAULT, HCBT_CREATEWND,
@@ -22,25 +24,20 @@ export function registerMessage(emu: Emulator): void {
   // (animation busy-loop) would otherwise spin inside a single tick forever
   // — real Windows yields to the scheduler between frames; we yield via the
   // PeekMessage suspend path once the per-tick budget is used up.
-  const synthesizePaint = (): { hwnd: number; message: number; wParam: number; lParam: number } | null => {
+  const synthesizePaint = (remove = true): { hwnd: number; message: number; wParam: number; lParam: number } | null => {
     if (emu._paintSynthBudget <= 0) return null;
     emu._paintSynthBudget--;
-    // Check all windows for needsPaint flag
+    // Check all windows for a pending update region. The region stays pending until
+    // BeginPaint/ValidateRect; WM_ERASEBKGND is sent by BeginPaint (clipped to the region).
     for (const [handle, wnd] of emu.handles.findByType('window') as [number, WindowInfo][]) {
-      if (!wnd || !wnd.needsPaint) continue;
+      if (!wnd || !wnd.needsPaint || wnd._paintQueued) continue;
       if (wnd.wndProc) {
-        if (wnd.needsErase) {
-          wnd.needsErase = false;
-          return { hwnd: handle, message: WM_ERASEBKGND, wParam: emu.getWindowDC(handle), lParam: 0 };
-        }
-        // Clear needsPaint here to prevent infinite WM_PAINT if WndProc doesn't call BeginPaint
-        wnd.needsPaint = false;
+        // Retrieved (removed) WM_PAINT: don't synthesize another until it is dispatched
+        if (remove) wnd._paintQueued = true;
         return { hwnd: handle, message: WM_PAINT, wParam: 0, lParam: 0 };
       }
       // Built-in windows (no wndProc) with a class brush: erase background directly
       if (wnd.needsErase && wnd.classInfo.hbrBackground) {
-        wnd.needsErase = false;
-        wnd.needsPaint = false;
         const hdc = emu.getWindowDC(handle);
         const dc = emu.getDC(hdc);
         if (dc) {
@@ -52,14 +49,13 @@ export function registerMessage(emu: Emulator): void {
             emu.syncDCToCanvas(hdc);
           }
         }
-      } else {
-        wnd.needsPaint = false;
       }
+      validateWindow(emu, wnd, null);
     }
     return null;
   };
 
-  user32.register('GetMessageA', 4, () => {
+  const getMessageImpl = (wide: boolean) => (): number | undefined => {
     const pMsg = emu.readArg(0);
     const _hWnd = emu.readArg(1);
     const _msgFilterMin = emu.readArg(2);
@@ -67,14 +63,14 @@ export function registerMessage(emu: Emulator): void {
 
     if (emu.messageQueue.length > 0) {
       const msg = emu.messageQueue.shift()!;
-      writeMsgStruct(emu, pMsg, msg);
+      writeMsgStruct(emu, pMsg, msg, wide);
       return msg.message === WM_QUIT ? 0 : 1;
     }
 
     // Synthesize WM_PAINT if any window needs repainting
     const paintMsg = synthesizePaint();
     if (paintMsg) {
-      writeMsgStruct(emu, pMsg, paintMsg);
+      writeMsgStruct(emu, pMsg, paintMsg, wide);
       return 1;
     }
 
@@ -83,7 +79,7 @@ export function registerMessage(emu: Emulator): void {
     emu.waitingForMessage = true;
     emu._onMessageAvailable = () => {
       const msg = emu.messageQueue.shift()!;
-      writeMsgStruct(emu, pMsg, msg);
+      writeMsgStruct(emu, pMsg, msg, wide);
       emu.waitingForMessage = false;
       emuCompleteThunk(emu, msg.message === WM_QUIT ? 0 : 1, stackBytes);
       if (emu.running && !emu.halted) {
@@ -91,9 +87,10 @@ export function registerMessage(emu: Emulator): void {
       }
     };
     return undefined;
-  });
+  };
+  user32.register('GetMessageA', 4, getMessageImpl(false));
 
-  user32.register('PeekMessageA', 5, () => {
+  const peekMessageImpl = (wide: boolean) => (): number | undefined => {
     const pMsg = emu.readArg(0);
     const hWnd = emu.readArg(1);
     const msgFilterMin = emu.readArg(2);
@@ -113,7 +110,7 @@ export function registerMessage(emu: Emulator): void {
 
     if (idx >= 0) {
       const msg = (removeFlag & PM_REMOVE) ? emu.messageQueue.splice(idx, 1)[0] : emu.messageQueue[idx];
-      writeMsgStruct(emu, pMsg, msg);
+      writeMsgStruct(emu, pMsg, msg, wide);
       return 1;
     }
 
@@ -121,10 +118,10 @@ export function registerMessage(emu: Emulator): void {
     // Only at the top-level message loop (depth 0) to avoid consuming WM_PAINT
     // prematurely during init or nested WndProc calls.
     if (emu.wndProcDepth === 0) {
-      const paintMsg = synthesizePaint();
+      const paintMsg = synthesizePaint(!!(removeFlag & PM_REMOVE));
       if (paintMsg) {
         if (!hasFilter || (paintMsg.message >= msgFilterMin && paintMsg.message <= msgFilterMax)) {
-          writeMsgStruct(emu, pMsg, paintMsg);
+          writeMsgStruct(emu, pMsg, paintMsg, wide);
           return 1;
         }
       }
@@ -151,14 +148,15 @@ export function registerMessage(emu: Emulator): void {
       return undefined;
     }
     return 0;
-  });
+  };
+  user32.register('PeekMessageA', 5, peekMessageImpl(false));
 
   user32.register('WaitMessage', 0, () => {
     // WaitMessage blocks until a message is available.
     if (emu.messageQueue.length > 0) return 1;
     // If any window needs repainting, return immediately so PeekMessage can synthesize WM_PAINT
     for (const [, wnd] of emu.handles.findByType('window') as [number, WindowInfo][]) {
-      if (wnd && wnd.needsPaint && wnd.wndProc) return 1;
+      if (wnd && wnd.needsPaint && !wnd._paintQueued && wnd.wndProc) return 1;
     }
     // Queue is empty — wait for a message or next frame
     const stackBytes = emu._currentThunkStackBytes;
@@ -194,7 +192,7 @@ export function registerMessage(emu: Emulator): void {
 
     // Check if any window needs repainting (synthesizable WM_PAINT)
     for (const [, wnd] of emu.handles.findByType('window') as [number, WindowInfo][]) {
-      if (wnd && wnd.needsPaint && (wnd.wndProc || (wnd.needsErase && wnd.classInfo.hbrBackground))) {
+      if (wnd && wnd.needsPaint && !wnd._paintQueued && (wnd.wndProc || (wnd.needsErase && wnd.classInfo.hbrBackground))) {
         return nCount;
       }
     }
@@ -232,7 +230,7 @@ export function registerMessage(emu: Emulator): void {
 
     if (emu.messageQueue.length > 0) return nCount;
     for (const [, wnd] of emu.handles.findByType('window') as [number, WindowInfo][]) {
-      if (wnd && wnd.needsPaint && (wnd.wndProc || (wnd.needsErase && wnd.classInfo.hbrBackground))) {
+      if (wnd && wnd.needsPaint && !wnd._paintQueued && (wnd.wndProc || (wnd.needsErase && wnd.classInfo.hbrBackground))) {
         return nCount;
       }
     }
@@ -263,14 +261,15 @@ export function registerMessage(emu: Emulator): void {
     return 0;
   });
 
-  user32.register('DispatchMessageA', 1, () => {
+  const dispatchMessageImpl = (wide: boolean) => (): number | undefined => {
     const pMsg = emu.readArg(0);
     const hwnd = emu.memory.readU32(pMsg);
     const message = emu.memory.readU32(pMsg + 4);
-    const wParam = emu.memory.readU32(pMsg + 8);
+    let wParam = emu.memory.readU32(pMsg + 8);
     const lParam = emu.memory.readU32(pMsg + 12);
     const wnd = emu.handles.get<WindowInfo>(hwnd);
     if (!wnd) return 0;
+    if (isCharMessage(message)) wParam = convertCharParam(wParam, wide, !!wnd.unicode);
 
     // WM_TIMER with non-zero lParam: call the timer callback directly
     // lpTimerFunc signature: void CALLBACK TimerProc(HWND, UINT, UINT_PTR, DWORD)
@@ -298,12 +297,20 @@ export function registerMessage(emu: Emulator): void {
     // For built-in controls (wndProc=0), handle the message internally
     if (!wnd.wndProc) {
       const builtin = handleBuiltinMessage(hwnd, message, wParam, lParam);
+      if (message === WM_PAINT) validateWindow(emu, wnd, null);
       return builtin ?? 0;
     }
 
     // Call WndProc via stack frame replacement
+    const paintSerial = wnd.paintSerial ?? 0;
     const ret = emu.callWndProc(wnd.wndProc, hwnd, message, wParam, lParam);
     if (ret === undefined) return undefined; // deferred — post-processing skipped
+    if (message === WM_PAINT) {
+      wnd._paintQueued = false;
+      // A WM_PAINT handler that neither called BeginPaint nor validated would get WM_PAINT
+      // forever; validate like DefWindowProc so the message loop can go idle.
+      if ((wnd.paintSerial ?? 0) === paintSerial && wnd.needsPaint) validateWindow(emu, wnd, null);
+    }
 
     // WM_GETMINMAXINFO caching is now handled by clampToMinTrackSize() in _helpers.ts
 
@@ -320,16 +327,20 @@ export function registerMessage(emu: Emulator): void {
     }
 
     return ret;
-  });
+  };
+  user32.register('DispatchMessageA', 1, dispatchMessageImpl(false));
 
-  user32.register('PostMessageA', 4, () => {
+  // Queued character messages are stored as UTF-16; PostMessageA's are ANSI.
+  const postMessageImpl = (wide: boolean) => (): number => {
     const hwnd = emu.readArg(0);
     const message = emu.readArg(1);
-    const wParam = emu.readArg(2);
+    let wParam = emu.readArg(2);
     const lParam = emu.readArg(3);
+    if (isCharMessage(message)) wParam = convertCharParam(wParam, wide, true);
     emu.postMessage(hwnd, message, wParam, lParam);
     return 1;
-  });
+  };
+  user32.register('PostMessageA', 4, postMessageImpl(false));
 
   const WM_MDICREATE = 0x0220;
   const WM_MDIDESTROY = 0x0221;
@@ -1784,38 +1795,8 @@ export function registerMessage(emu: Emulator): void {
 
     // StatusBar messages
     if (cn === 'MSCTLS_STATUSBAR32') {
-      const WM_SIZE = 0x0005;
-      const SB_SETTEXTW = 0x040B;
-      const SB_SETPARTS = 0x0404;
-      const SB_SIMPLE = 0x0409;
-      // Status bars auto-resize to bottom of parent on WM_SIZE
-      if (message === WM_SIZE) {
-        const parentWnd = emu.handles.get<WindowInfo>(wnd.parent);
-        if (parentWnd) {
-          const { cw, ch } = getClientSize(parentWnd.style, parentWnd.hMenu !== 0, parentWnd.width, parentWnd.height);
-          const statusH = wnd.height || 20;
-          wnd.x = 0;
-          wnd.y = ch - statusH;
-          wnd.width = cw;
-        }
-        return 0;
-      }
-      if (message === SB_SETPARTS) {
-        wnd.statusParts = [];
-        for (let i = 0; i < wParam; i++) {
-          wnd.statusParts.push(emu.memory.readI32(lParam + i * 4));
-        }
-        if (!wnd.statusTexts) wnd.statusTexts = [];
-        return 1;
-      }
-      if (message === SB_SETTEXTW) {
-        const part = wParam & 0xFF;
-        if (!wnd.statusTexts) wnd.statusTexts = [];
-        wnd.statusTexts[part] = lParam ? emu.memory.readUTF16String(lParam) : '';
-        return 1;
-      }
-      if (message === SB_SIMPLE) return 1;
-      if (message >= 0x0400 && message < 0x0500) return 0;
+      const r = handleStatusBarMessage(emu, wnd, message, wParam, lParam);
+      if (r !== null) return r;
     }
 
     // RichEdit messages (EM_* for RichEdit20W)
@@ -1893,7 +1874,13 @@ export function registerMessage(emu: Emulator): void {
         const wParam = emu.readArg(2);
         const lParam = emu.readArg(3);
         const r = handleBuiltinMessage(hwnd, message, wParam, lParam, wide);
-        return r ?? 0;
+        if (r !== null) return r;
+        // Not a control-specific message: the control's window procedure
+        // falls through to DefWindowProc (same stack layout: hwnd, msg, wParam, lParam).
+        const target = emu.handles.get<WindowInfo>(hwnd);
+        const isDialog = !!target?.dlgProc || target?.classInfo?.className === '#32770';
+        const def = isDialog ? (wide ? 'DefDlgProcW' : 'DefDlgProcA') : (wide ? 'DefWindowProcW' : 'DefWindowProcA');
+        return emu.apiDefs.get(`USER32.DLL:${def}`)!.handler(emu) ?? 0;
       },
       stackBytes: 16,
     });
@@ -2037,10 +2024,10 @@ export function registerMessage(emu: Emulator): void {
   });
 
   // W versions are functionally identical to their A counterparts
-  user32.register('GetMessageW', 4, emu.apiDefs.get('USER32.DLL:GetMessageA')?.handler!);
-  user32.register('PeekMessageW', 5, emu.apiDefs.get('USER32.DLL:PeekMessageA')?.handler!);
-  user32.register('DispatchMessageW', 1, emu.apiDefs.get('USER32.DLL:DispatchMessageA')?.handler!);
-  user32.register('PostMessageW', 4, emu.apiDefs.get('USER32.DLL:PostMessageA')?.handler!);
+  user32.register('GetMessageW', 4, getMessageImpl(true));
+  user32.register('PeekMessageW', 5, peekMessageImpl(true));
+  user32.register('DispatchMessageW', 1, dispatchMessageImpl(true));
+  user32.register('PostMessageW', 4, postMessageImpl(true));
 
   user32.register('PostThreadMessageW', 4, () => 1); // pretend success
 

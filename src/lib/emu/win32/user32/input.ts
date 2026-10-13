@@ -1,5 +1,5 @@
 import type { Emulator } from '../../emulator';
-import { loadSettings, getKeyboardLayout } from '../../../regional-settings';
+import { layoutForLcid } from '../../../regional-settings';
 
 export function registerInput(emu: Emulator): void {
   const user32 = emu.registerDll('USER32.DLL');
@@ -46,9 +46,10 @@ export function registerInput(emu: Emulator): void {
   });
   user32.register('GetCursor', 0, () => emu.currentCursor);
   user32.register('ShowCursor', 1, () => 1);
+  // GetKeyState reflects the state as of the last input message retrieved from the queue
   user32.register('GetKeyState', 1, () => {
     const vk = emu.readArg(0) & 0xFF;
-    return emu.keyStates.has(vk) ? 0x8000 : 0;
+    return (emu.msgKeyState ?? emu.keyStates).has(vk) ? 0x8000 : 0;
   });
   user32.register('GetAsyncKeyState', 1, () => {
     const vk = emu.readArg(0) & 0xFF;
@@ -58,94 +59,33 @@ export function registerInput(emu: Emulator): void {
   user32.register('GetKeyboardState', 1, () => {
     const ptr = emu.readArg(0);
     for (let i = 0; i < 256; i++) {
-      emu.memory.writeU8(ptr + i, emu.keyStates.has(i) ? 0x80 : 0);
+      emu.memory.writeU8(ptr + i, (emu.msgKeyState ?? emu.keyStates).has(i) ? 0x80 : 0);
     }
     return 1;
   });
 
-  // MapVirtualKeyA(uCode, uMapType)
-  const MAPVK_VK_TO_VSC = 0;
-  const MAPVK_VSC_TO_VK = 1;
-  const MAPVK_VK_TO_CHAR = 2;
-  user32.register('MapVirtualKeyA', 2, () => {
-    const uCode = emu.readArg(0);
-    const uMapType = emu.readArg(1);
-    const layout = getKeyboardLayout(loadSettings().keyboardLayout);
-    if (uMapType === MAPVK_VK_TO_CHAR) {
-      // Find the char produced by this VK (unshifted)
-      for (const [ch, info] of layout.charToVK) {
-        if (info.vk === uCode && !info.shift) return ch.charCodeAt(0);
-      }
-      return 0;
-    }
-    if (uMapType === MAPVK_VK_TO_VSC) {
-      // Simplified VK to scan code mapping
-      if (uCode >= 0x41 && uCode <= 0x5A) return uCode - 0x41 + 0x1E; // approx
-      if (uCode >= 0x30 && uCode <= 0x39) return uCode - 0x30 + 0x02; // digits
-      return 0;
-    }
-    if (uMapType === MAPVK_VSC_TO_VK) {
-      // Simplified scan code to VK
-      if (uCode >= 0x1E && uCode <= 0x37) return uCode - 0x1E + 0x41;
-      if (uCode >= 0x02 && uCode <= 0x0B) return uCode - 0x02 + 0x30;
-      return 0;
-    }
-    return 0;
-  });
   user32.register('GetKeyNameTextA', 3, () => 0);
   user32.register('GetKeyNameTextW', 3, () => 0);
 
-  // MapVirtualKeyW — same as A version
-  user32.register('MapVirtualKeyW', 2, () => {
-    const uCode = emu.readArg(0);
-    const uMapType = emu.readArg(1);
-    if (uMapType === MAPVK_VK_TO_VSC) {
-      if (uCode >= 0x41 && uCode <= 0x5A) return uCode - 0x41 + 0x1E;
-      if (uCode >= 0x30 && uCode <= 0x39) return uCode - 0x30 + 0x02;
-      return 0;
-    }
-    if (uMapType === MAPVK_VSC_TO_VK) {
-      if (uCode >= 0x1E && uCode <= 0x37) return uCode - 0x1E + 0x41;
-      if (uCode >= 0x02 && uCode <= 0x0B) return uCode - 0x02 + 0x30;
-      return 0;
-    }
-    return 0;
-  });
-
-  // VkKeyScanA(ch) → low byte = VK code, high byte = shift state; -1 if not found
-  user32.register('VkKeyScanA', 1, () => {
-    const ch = emu.readArg(0) & 0xFF;
-    // Map ASCII characters to virtual key codes
-    if (ch >= 0x61 && ch <= 0x7A) return ch - 0x20; // a-z → VK_A-VK_Z (0x41-0x5A)
-    if (ch >= 0x41 && ch <= 0x5A) return 0x0100 | ch; // A-Z → shift + VK_A-VK_Z
-    if (ch >= 0x30 && ch <= 0x39) return ch; // 0-9
-    if (ch === 0x20) return 0x20; // space
-    if (ch === 0x0D) return 0x0D; // enter
-    if (ch === 0x1B) return 0x1B; // escape
-    if (ch === 0x09) return 0x09; // tab
-    if (ch === 0x08) return 0x08; // backspace
-    return -1;
-  });
-
   // GetKeyboardLayout(idThread) — return HKL for configured layout
   user32.register('GetKeyboardLayout', 1, () => {
-    const layout = getKeyboardLayout(loadSettings().keyboardLayout);
+    const layout = layoutForLcid(emu.configuredLcid);
     return layout.hkl;
   });
 
   // LoadKeyboardLayoutA/W(pwszKLID, Flags) — return current HKL
   user32.register('LoadKeyboardLayoutW', 2, () => {
-    const layout = getKeyboardLayout(loadSettings().keyboardLayout);
+    const layout = layoutForLcid(emu.configuredLcid);
     return layout.hkl;
   });
   user32.register('LoadKeyboardLayoutA', 2, () => {
-    const layout = getKeyboardLayout(loadSettings().keyboardLayout);
+    const layout = layoutForLcid(emu.configuredLcid);
     return layout.hkl;
   });
 
   // ActivateKeyboardLayout(HKL, Flags) — return previous HKL
   user32.register('ActivateKeyboardLayout', 2, () => {
-    const layout = getKeyboardLayout(loadSettings().keyboardLayout);
+    const layout = layoutForLcid(emu.configuredLcid);
     return layout.hkl;
   });
 
@@ -153,7 +93,7 @@ export function registerInput(emu: Emulator): void {
   user32.register('GetKeyboardLayoutList', 2, () => {
     const nBuff = emu.readArg(0);
     const lpList = emu.readArg(1);
-    const layout = getKeyboardLayout(loadSettings().keyboardLayout);
+    const layout = layoutForLcid(emu.configuredLcid);
     if (nBuff > 0 && lpList) {
       emu.memory.writeU32(lpList, layout.hkl);
     }
@@ -170,14 +110,4 @@ export function registerInput(emu: Emulator): void {
   });
 
   // GetKeyboardLayoutNameW(pwszKLID) → BOOL — writes "00000409" etc
-  user32.register('GetKeyboardLayoutNameW', 1, () => {
-    const pwszKLID = emu.readArg(0);
-    if (pwszKLID) {
-      const layout = getKeyboardLayout(loadSettings().keyboardLayout);
-      const name = layout.hkl.toString(16).padStart(8, '0');
-      for (let i = 0; i < name.length; i++) emu.memory.writeU16(pwszKLID + i * 2, name.charCodeAt(i));
-      emu.memory.writeU16(pwszKLID + name.length * 2, 0);
-    }
-    return 1;
-  });
 }

@@ -1,17 +1,15 @@
 import type { Emulator } from './emulator';
 import type { DCInfo, BitmapInfo, BrushInfo, PenInfo } from './win32/gdi32/index';
 import type { WindowInfo } from './win32/user32/index';
-import { OPAQUE, SYS_COLORS, COLOR_BTNFACE, WM_ERASEBKGND as WM_ERASEBKGND_MSG } from './win32/types';
+import { OPAQUE, SYS_COLORS, COLOR_BTNFACE } from './win32/types';
 import { decodeDib } from '../pe/decode-dib';
 import { rvaToFileOffset } from '../pe/read';
-import { renderChildControls } from './emu-render';
+import { resetDCLayers } from './win32/gdi32/dc-clip';
 import { getClientSize, getNonClientMetrics } from './win32/user32/_helpers';
 import { emuFindResourceEntryForModule } from './emu-load';
 
 // Track DCs that have canvas state saved (child window translate)
 const childDCSet = new Set<number>();
-// Track DCs that have WS_CLIPCHILDREN state saved
-const clipChildrenDCSet = new Set<number>();
 
 // A special thunk for SEH handler dispatch return
 const SEH_DISPATCH_RETURN_THUNK = 0x00FE0004;
@@ -87,14 +85,21 @@ export function setupCanvasSize(emu: Emulator, cw: number, ch: number): void {
     if (dc) {
       dc.canvas = emu.canvas;
       dc.ctx = emu.canvasCtx;
+      // Resizing the canvas reset its state stack
+      dc.layers = [];
+      dc.clipRgn = null;
+      dc.visRgn = null;
     }
   }
 }
 
+const WS_CHILD_STYLE = 0x40000000;
+
 // Check if hwnd is a descendant of the main window
-function isDescendantOfMain(emu: Emulator, hwnd: number): boolean {
+export function isDescendantOfMain(emu: Emulator, hwnd: number): boolean {
   let cur = emu.handles.get<WindowInfo>(hwnd);
-  while (cur && cur.parent) {
+  // Only WS_CHILD windows live inside their parent; for popups `parent` is the owner.
+  while (cur && cur.parent && (cur.style & WS_CHILD_STYLE)) {
     if (cur.parent === emu.mainWindow) return true;
     cur = emu.handles.get<WindowInfo>(cur.parent);
   }
@@ -231,123 +236,21 @@ export function getWindowDC(emu: Emulator, hwnd: number): number {
   return hdc;
 }
 
-const WS_CLIPCHILDREN = 0x02000000;
-
-function applyClipChildren(emu: Emulator, hwnd: number, wnd: WindowInfo | null, hdc: number): void {
-  if (!wnd || !(wnd.style & WS_CLIPCHILDREN) || !wnd.childList || hwnd !== emu.mainWindow) return;
-  const dc = getDC(emu, hdc);
-  if (!dc) return;
-
-  // Collect visible child rects
-  const childRects: { x: number; y: number; w: number; h: number }[] = [];
-  for (const childHwnd of wnd.childList) {
-    const child = emu.handles.get<WindowInfo>(childHwnd);
-    if (!child || !child.visible) continue;
-    childRects.push({ x: child.x, y: child.y, w: child.width, h: child.height });
-  }
-  if (childRects.length === 0) return;
-
-  dc.ctx.save();
-  clipChildrenDCSet.add(hdc);
-
-  // Create a clip path that is the canvas rect minus child rects
-  // Using evenodd: outer rect CW + child rects CW will clip out the children
-  const cw = dc.canvas.width;
-  const ch = dc.canvas.height;
-  dc.ctx.beginPath();
-  dc.ctx.rect(0, 0, cw, ch);
-  for (const r of childRects) {
-    // Draw child rect in reverse winding (CCW) for evenodd clipping
-    dc.ctx.moveTo(r.x, r.y);
-    dc.ctx.lineTo(r.x, r.y + r.h);
-    dc.ctx.lineTo(r.x + r.w, r.y + r.h);
-    dc.ctx.lineTo(r.x + r.w, r.y);
-    dc.ctx.closePath();
-  }
-  dc.ctx.clip('evenodd');
-}
-
-export function beginPaint(emu: Emulator, hwnd: number): number {
-  const hdc = getWindowDC(emu, hwnd);
-  // Validate the region — clear needsPaint to prevent infinite WM_PAINT loop
-  const wnd = emu.handles.get<WindowInfo>(hwnd);
-  const pendingErase = !!wnd?.needsErase;
-  if (wnd) { wnd.needsPaint = false; wnd.needsErase = false; wnd.painting = true; }
-  // Signal to DispatchMessage that BeginPaint was called (so it doesn't duplicate overlay notifications)
-  emu._dispatchPaintUsedBeginPaint = true;
-
-  // Apply WS_CLIPCHILDREN: clip out visible child windows on main window DC
-  // Must be applied before erase so child areas are protected
-  applyClipChildren(emu, hwnd, wnd, hdc);
-
-  // Like Windows, erase only when the update region was invalidated with erase pending, and
-  // let the window erase itself via WM_ERASEBKGND (DefWindowProc/DefDlgProc use the class
-  // brush / COLOR_BTNFACE). Erasing unconditionally would wipe what the window painted in
-  // its own WM_ERASEBKGND handler. Built-in windows without a wndProc get the class brush.
-  if (wnd) wnd.paintFErase = false;
-  if (wnd && pendingErase) {
-    if (wnd.wndProc) {
-      const handled = emu.callWndProc(wnd.wndProc, hwnd, WM_ERASEBKGND_MSG, hdc, 0);
-      // PAINTSTRUCT.fErase: TRUE when the window did not erase its background
-      wnd.paintFErase = !handled;
-    } else {
-      const dc = getDC(emu, hdc);
-      const isDialog = wnd.classInfo.className === '#32770' || !!wnd.dlgProc;
-      let bgColor: number | null = null;
-      if (isDialog) {
-        bgColor = SYS_COLORS[COLOR_BTNFACE];
-      } else if (wnd.classInfo.hbrBackground) {
-        const brush = getBrush(emu, wnd.classInfo.hbrBackground);
-        if (brush && !brush.isNull) bgColor = brush.color;
-      }
-      if (dc && bgColor !== null) {
-        const r = bgColor & 0xFF, g = (bgColor >> 8) & 0xFF, b = (bgColor >> 16) & 0xFF;
-        dc.ctx.fillStyle = `rgb(${r},${g},${b})`;
-        dc.ctx.fillRect(0, 0, wnd.width, wnd.height);
-      }
-    }
-  }
-
-  return hdc;
-}
-
-export function endPaint(emu: Emulator, hwnd: number, _hdc: number): void {
-  const wnd = emu.handles.get<WindowInfo>(hwnd);
-
-  // Restore WS_CLIPCHILDREN clip before rendering children
-  const hdc = emu.windowDCs.get(hwnd);
-  if (hdc && clipChildrenDCSet.has(hdc)) {
-    const dc = getDC(emu, hdc);
-    if (dc) dc.ctx.restore();
-    clipChildrenDCSet.delete(hdc);
-  }
-  // Restore canvas state for child windows
-  if (hdc) releaseChildDC(emu, hdc);
-
-  // After paint completes, render child controls on top
-  renderChildControls(emu, hwnd);
-  // Clear painting flag
-  if (wnd) wnd.painting = false;
-
-  // After the main window paints, mark all visible popup windows for repaint
-  // so they draw on top of the main window's content
-  if (hwnd === emu.mainWindow) {
-    for (const [h, w] of emu.handles.findByType('window') as [number, WindowInfo][]) {
-      if (w && w.visible && h !== emu.mainWindow && !isDescendantOfMain(emu, h) && w.wndProc) {
-        w.needsPaint = true;
-      }
-    }
-  }
-}
+export { beginPaint, endPaint } from './emu-paint';
 
 export function releaseChildDC(emu: Emulator, hdc: number): void {
   if (childDCSet.has(hdc)) {
     const dc = getDC(emu, hdc);
+    // The cached DC is shared with BeginPaint: a ReleaseDC (or nested GetDC) while the
+    // window is painting must not discard the paint clip — EndPaint releases it.
+    const owner = dc ? emu.handles.get<WindowInfo>(dc.hwnd) : null;
+    if (owner?.painting) return;
     if (dc) {
       // Like Wine's reset_dc_state: pop ALL saves made via SaveDC on this DC,
       // then pop the one from getWindowDC (translate+clip).
       // The x86 code may call SaveDC without matching RestoreDC — Windows
       // automatically discards all saved states when the DC is released.
+      resetDCLayers(dc);
       const extraSaves = dc.saveLevel || 0;
       for (let i = 0; i < extraSaves; i++) dc.ctx.restore();
       dc.saveLevel = 0;

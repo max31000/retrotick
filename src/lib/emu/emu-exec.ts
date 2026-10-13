@@ -100,7 +100,21 @@ function handlePageFault(emu: Emulator, e: PageFaultError): boolean {
 let _immedCb: (() => void) | null = null;
 const _immedChan = typeof MessageChannel !== 'undefined' ? new MessageChannel() : null;
 if (_immedChan) { _immedChan.port1.onmessage = () => { if (_immedCb) { const cb = _immedCb; _immedCb = null; cb(); } }; }
-function scheduleImmediate(fn: () => void): void {
+/** Zero-delay scheduling with a channel owned by the emulator, so several emulators
+ *  (or the DOS fast path) never overwrite each other's pending callback. */
+export function scheduleImmediateFor(emu: Emulator, fn: () => void): void {
+  const e = emu as Emulator & { _immed?: { chan: MessageChannel; cb: (() => void) | null } };
+  if (typeof MessageChannel === 'undefined') { setTimeout(fn, 0); return; }
+  if (!e._immed) {
+    const slot = { chan: new MessageChannel(), cb: null as (() => void) | null };
+    slot.chan.port1.onmessage = () => { const cb = slot.cb; slot.cb = null; cb?.(); };
+    e._immed = slot;
+  }
+  e._immed.cb = fn;
+  e._immed.chan.port2.postMessage(null);
+}
+
+export function scheduleImmediate(fn: () => void): void {
   if (_immedChan) { _immedCb = fn; _immedChan.port2.postMessage(null); }
   else setTimeout(fn, 0);
 }

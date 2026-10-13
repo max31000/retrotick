@@ -45,19 +45,7 @@ export function registerDC(emu: Emulator): void {
     return 1;
   });
 
-  gdi32.register('SaveDC', 1, () => {
-    const hdc = emu.readArg(0);
-    const dc = emu.getDC(hdc);
-    if (dc) dc.ctx.save();
-    return 1;
-  });
 
-  gdi32.register('RestoreDC', 2, () => {
-    const hdc = emu.readArg(0);
-    const dc = emu.getDC(hdc);
-    if (dc) dc.ctx.restore();
-    return 1;
-  });
 
   // CreateIC — information context (like CreateDC but read-only)
   gdi32.register('CreateICW', 4, () => {
@@ -164,28 +152,8 @@ export function registerDC(emu: Emulator): void {
     return 1;
   });
 
-  gdi32.register('IntersectClipRect', 5, () => {
-    const hdc = emu.readArg(0);
-    const left = emu.readArg(1) | 0;
-    const top = emu.readArg(2) | 0;
-    const right = emu.readArg(3) | 0;
-    const bottom = emu.readArg(4) | 0;
-    const dc = emu.getDC(hdc);
-    if (dc) {
-      dc.ctx.beginPath();
-      dc.ctx.rect(left, top, right - left, bottom - top);
-      dc.ctx.clip();
-    }
-    return 1; // SIMPLEREGION
-  });
 
-  gdi32.register('SelectClipRgn', 2, () => 1);
-  gdi32.register('ExtSelectClipRgn', 3, () => 1); // SIMPLEREGION
-  gdi32.register('ExcludeClipRect', 5, () => 1); // SIMPLEREGION
   gdi32.register('SelectClipPath', 2, () => 1);
-  gdi32.register('OffsetClipRgn', 3, () => 1); // SIMPLEREGION
-  gdi32.register('RectVisible', 2, () => 1); // visible
-  gdi32.register('GetClipRgn', 2, () => 0);
 
   // Metafile stubs
   gdi32.register('CreateMetaFileW', 1, () => 0);
@@ -197,18 +165,6 @@ export function registerDC(emu: Emulator): void {
   gdi32.register('ScaleWindowExtEx', 6, () => 1);
   gdi32.register('SetColorAdjustment', 2, () => 1);
 
-  gdi32.register('GetClipBox', 2, () => {
-    const _hdc = emu.readArg(0);
-    const rectPtr = emu.readArg(1);
-    if (rectPtr) {
-      emu.memory.writeU32(rectPtr, 0);     // left
-      emu.memory.writeU32(rectPtr + 4, 0); // top
-      emu.memory.writeU32(rectPtr + 8, emu.screenWidth);  // right
-      emu.memory.writeU32(rectPtr + 12, emu.screenHeight); // bottom
-    }
-    return 1; // SIMPLEREGION
-  });
 
-  gdi32.register('PtVisible', 3, () => 1); // point is visible
   gdi32.register('Escape', 5, () => 0);    // not supported
 }
