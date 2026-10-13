@@ -1,0 +1,36 @@
+{
+	"name": "@bliss/retrotick-runner",
+	"version": "0.1.0",
+	"description": "Embeddable RetroTick runner: original Win32 games in a host element with a Windows XP Luna frame",
+	"license": "CC0-1.0",
+	"type": "module",
+	"main": "./dist/retrotick-runner.js",
+	"module": "./dist/retrotick-runner.js",
+	"types": "./index.d.ts",
+	"exports": {
+		".": {
+			"types": "./index.d.ts",
+			"import": "./dist/retrotick-runner.js"
+		},
+		"./luna": {
+			"types": "./luna.d.ts",
+			"import": "./dist/luna.js"
+		},
+		"./luna.css": "./dist/luna.css",
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"dist",
+		"index.d.ts",
+		"luna.d.ts",
+		"README.md"
+	],
+	"sideEffects": [
+		"*.css"
+	],
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/max31000/retrotick.git",
+		"directory": "runner-pkg"
+	}
+}

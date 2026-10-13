@@ -1,0 +1,51 @@
+name: runner-release
+
+# Builds @bliss/retrotick-runner and attaches retrotick-runner-X.Y.Z.tgz to the
+# GitHub release of tag runner-vX.Y.Z (the release is created if missing).
+on:
+  push:
+    tags:
+      - 'runner-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Set package version from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#runner-v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          cd runner-pkg
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+      - name: Build
+        run: npm run build:runner
+
+      - name: Pack
+        run: node scripts/pack-runner.mjs out
+
+      - name: Check tarball
+        run: |
+          test -f "out/retrotick-runner-${VERSION}.tgz"
+          tar tzf "out/retrotick-runner-${VERSION}.tgz" | grep -q package/dist/retrotick-runner.js
+          tar tzf "out/retrotick-runner-${VERSION}.tgz" | grep -q package/dist/luna.css
+
+      - name: Publish release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "@bliss/retrotick-runner $VERSION"
+          gh release upload "$GITHUB_REF_NAME" "out/retrotick-runner-${VERSION}.tgz" --clobber
