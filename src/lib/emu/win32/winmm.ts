@@ -7,6 +7,8 @@ const SND_MEMORY      = 0x0004;
 const SND_LOOP        = 0x0008;
 const SND_PURGE       = 0x0040;
 const SND_RESOURCE_ID = 0x00040000;
+// SND_RESOURCE includes the SND_MEMORY bit, so it must be tested before SND_MEMORY
+const SND_RESOURCE    = 0x00040004;
 
 const RT_RCDATA = 10;
 
@@ -336,6 +338,13 @@ export function registerWinmm(emu: Emulator): void {
   function resolveWavData(pszSound: number, fdwSound: number, isWide: boolean): Uint8Array | null {
     if (!pszSound) return null;
 
+    if ((fdwSound & SND_RESOURCE) === SND_RESOURCE) {
+      // pszSound is MAKEINTRESOURCE(id) or a resource name string
+      if (pszSound < 0x10000) return findWavResource(emu, pszSound);
+      const resName = isWide ? emu.memory.readUTF16String(pszSound) : emu.memory.readCString(pszSound);
+      return findWavResource(emu, resName.startsWith('#') ? parseInt(resName.substring(1), 10) : resName);
+    }
+
     if (fdwSound & SND_MEMORY) {
       // pszSound points to in-memory WAV data
       // We need to parse the RIFF header to determine size
@@ -444,6 +453,11 @@ export function registerWinmm(emu: Emulator): void {
     const pszSound = emu.readArg(0);
     const fuSound = emu.readArg(1);
     return playSoundImpl(pszSound, fuSound, false);
+  });
+  winmm.register('sndPlaySoundW', 2, () => {
+    const pszSound = emu.readArg(0);
+    const fuSound = emu.readArg(1);
+    return playSoundImpl(pszSound, fuSound, true);
   });
   winmm.register('timeGetTime', 0, () => (Date.now() & 0xFFFFFFFF) >>> 0);
 
