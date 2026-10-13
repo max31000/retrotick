@@ -20,6 +20,39 @@ eq('xor', R(0, 0, 10, 10).combine(R(0, 0, 10, 5), 'xor').rects, [{ left: 0, top:
 eq('point in', R(0, 0, 10, 10).containsPoint(9, 9), true);
 eq('point out (exclusive right)', R(0, 0, 10, 10).containsPoint(10, 5), false);
 
+// Randomized correctness against a pixel grid
+let seed = 12345;
+const rnd = (n) => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n; };
+const randRect = (n) => { const l = rnd(n), t = rnd(n); return R(l, t, l + 1 + rnd(n / 2), t + 1 + rnd(n / 2)); };
+const pix = (rg, n) => { const a = []; for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) a.push(rg.containsPoint(x, y) ? 1 : 0); return a.join(''); };
+let mismatch = 0;
+for (let iter = 0; iter < 200; iter++) {
+  let a = randRect(40), b = randRect(40);
+  for (let k = 0; k < 3; k++) { a = a.union(randRect(40)); b = b.union(randRect(40)); }
+  for (const op of ['and', 'or', 'xor', 'diff']) {
+    const got = pix(a.combine(b, op), 64);
+    const pa = pix(a, 64), pb = pix(b, 64);
+    let want = '';
+    for (let i = 0; i < pa.length; i++) {
+      const x = pa[i] === '1', y = pb[i] === '1';
+      want += (op === 'and' ? x && y : op === 'or' ? x || y : op === 'xor' ? x !== y : x && !y) ? '1' : '0';
+    }
+    if (got !== want) mismatch++;
+  }
+}
+eq('random combine matches pixel grid', mismatch, 0);
+
+// Performance: 500 random unions and a subtraction stay fast
+{
+  const t0 = performance.now();
+  let acc = new Region();
+  for (let i = 0; i < 500; i++) { const l = rnd(2000), t = rnd(2000); acc = acc.union(R(l, t, l + 1 + rnd(40), t + 1 + rnd(40))); }
+  const hole = acc.subtract(R(500, 500, 1500, 1500));
+  const ms = performance.now() - t0;
+  console.log(`  500 unions -> ${acc.rects.length} rects, ${hole.rects.length} after subtract, ${ms.toFixed(1)} ms`);
+  eq('500 small-rect unions + subtract < 100 ms', ms < 100, true);
+}
+
 // A child window 100x50 (WS_CHILD, no border): client = window
 const emu = { isNE: false };
 const wnd = { style: 0x40000000, hMenu: 0, width: 100, height: 50 };
