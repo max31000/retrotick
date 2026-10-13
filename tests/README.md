@@ -23,3 +23,18 @@ Each test file:
 - Loads the target executable with `parsePE()` + `emu.load()`
 - Calls `emu.tick()` in a loop until `emu.waitingForMessage` is true
 - Optionally inspects window hierarchy, child positions, and control state
+
+## Windows XP game tests (assets supplied externally)
+
+`test-xp-*.mjs` run original XP games headlessly via `tests/lib/headless-harness.mjs`.
+The binaries are not part of the repository; point `BLISS_ASSETS` (or the first CLI
+argument) at a directory containing them (`sol.exe`, `winmine.exe`, `freecell.exe`,
+`spider.exe`, `mshearts.exe`, `cards.dll`, `mfc42u.dll`, `nddeapi.dll`):
+
+```bash
+BLISS_ASSETS=/path/to/xp-files npx tsx tests/test-xp-sol.mjs
+```
+
+Without assets the tests print `[TEST] SKIP` and exit with code 2.
+`HARNESS_VERBOSE=1` shows emulator logs, `HARNESS_TRACE=1` enables API tracing.
+`test-mouse-buttons.mjs` and `test-locale-ru.mjs` need no binaries.
