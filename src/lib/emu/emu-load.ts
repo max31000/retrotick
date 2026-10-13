@@ -17,6 +17,7 @@ import { registerComctl32 } from './win32/comctl32';
 import { registerWinmm } from './win32/winmm';
 import { registerShell32 } from './win32/shell32';
 import { registerRpcrt4 } from './win32/rpcrt4';
+import { registerHhctrl } from './win32/hhctrl';
 import { registerAdvapi32Security } from './win32/advapi32-security';
 import { registerOleaut32 } from './win32/oleaut32';
 import { registerComdlg32 } from './win32/comdlg32';
@@ -544,6 +545,7 @@ export async function emuLoad(emu: Emulator, arrayBuffer: ArrayBuffer, peInfo: P
   registerUtildll(emu);
   registerRpcrt4(emu);
   registerAdvapi32Security(emu);
+  registerHhctrl(emu);
 
   // Build thunk dispatch table with argument count detection
   buildThunkTable(emu);
