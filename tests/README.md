@@ -43,7 +43,9 @@ Without assets the tests print `[TEST] SKIP` and exit with code 2.
 
 `tests/runner/check_runner.py` mounts each XP game through `runner-demo.html` (Luna frame,
 Cyrillic menus, menu opens, caption close → `onExit`); `tests/runner/check_scaled.py` runs
-Minesweeper under `transform: scale(0.45)` and verifies click mapping and overlay placement.
+Minesweeper under `transform: scale(0.45)` and verifies click mapping and overlay placement;
+`tests/runner/check_lifecycle.py` checks that settings written at exit persist across a remount and
+that an unmount during start-up stops the emulator. `npx tsx tests/test-runner-units.mjs` needs no browser.
 Start the dev server first (`npx vite --host 127.0.0.1 --port 5291`), then:
 
 ```bash

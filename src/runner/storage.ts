@@ -14,6 +14,9 @@ const FILES_STORE = 'files';
 
 interface FileRecord { name: string; data: ArrayBuffer }
 
+/** Closes still flushing per namespace: a remount waits for them before reading. */
+const closing = new Map<string, Promise<void>>();
+
 function openDb(name: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(name, DB_VERSION);
@@ -35,13 +38,16 @@ function reqToPromise<T>(req: IDBRequest<T>): Promise<T> {
   });
 }
 
-export function createRunnerStorage(namespace: string): EmulatorStorage & { close(): void } {
+export function createRunnerStorage(namespace: string): EmulatorStorage & { close(): Promise<void> } {
+  let closed = false;
+  const inFlight = new Set<Promise<unknown>>();
   let dbPromise: Promise<IDBDatabase | null> | null = null;
   const db = (): Promise<IDBDatabase | null> => {
     if (!dbPromise) {
       dbPromise = (async () => {
         try {
           if (typeof indexedDB === 'undefined') return null;
+          await closing.get(namespace);
           return await openDb(DB_PREFIX + namespace);
         } catch (e) {
           console.warn('[runner] IndexedDB unavailable, settings will not persist:', e);
@@ -52,7 +58,19 @@ export function createRunnerStorage(namespace: string): EmulatorStorage & { clos
     return dbPromise;
   };
 
-  async function run<T>(store: string, mode: IDBTransactionMode, op: (s: IDBObjectStore) => IDBRequest<T>, fallback: T): Promise<T> {
+  /** Every operation is tracked so close() can wait for in-flight writes. */
+  function run<T>(store: string, mode: IDBTransactionMode, op: (s: IDBObjectStore) => IDBRequest<T>, fallback: T): Promise<T> {
+    if (closed) {
+      console.warn(`[runner] storage closed, ${mode} on ${store} ignored`);
+      return Promise.resolve(fallback);
+    }
+    const p = runNow(store, mode, op, fallback);
+    inFlight.add(p);
+    p.finally(() => inFlight.delete(p));
+    return p;
+  }
+
+  async function runNow<T>(store: string, mode: IDBTransactionMode, op: (s: IDBObjectStore) => IDBRequest<T>, fallback: T): Promise<T> {
     try {
       const d = await db();
       if (!d) return fallback;
@@ -90,9 +108,19 @@ export function createRunnerStorage(namespace: string): EmulatorStorage & { clos
     },
     addFile: async (name, data) => { await run(FILES_STORE, 'readwrite', s => s.put({ name, data }), undefined as unknown as IDBValidKey); },
     deleteFile: async (name) => { await run(FILES_STORE, 'readwrite', s => s.delete(name), undefined); },
+    /** Waits for pending reads/writes (e.g. settings flushed at exit), then closes the database. */
     close: () => {
-      dbPromise?.then(d => d?.close()).catch(() => { /* ignore */ });
-      dbPromise = null;
+      if (closed) return closing.get(namespace) ?? Promise.resolve();
+      closed = true;
+      const done = (async () => {
+        while (inFlight.size > 0) await Promise.allSettled([...inFlight]);
+        const d = await dbPromise?.catch(() => null);
+        d?.close();
+        dbPromise = null;
+      })();
+      const tracked = done.finally(() => { if (closing.get(namespace) === tracked) closing.delete(namespace); });
+      closing.set(namespace, tracked);
+      return tracked;
     },
   };
 }

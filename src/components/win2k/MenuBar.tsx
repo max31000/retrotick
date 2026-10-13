@@ -17,20 +17,25 @@ export function MenuDropdown({ items, onCommand, onClose, isSubmenu, x, y }: {
   const [openSub, setOpenSub] = useState<number | null>(null);
   const [flipX, setFlipX] = useState(false);
   const [flipY, setFlipY] = useState(false);
+  /** Own size in local CSS pixels (unscaled), for flipping fixed menus */
+  const [size, setSize] = useState({ w: 0, h: 0 });
   const ref = useRef<HTMLDivElement>(null);
   const luna = useIsLuna();
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    // Overflow is checked in viewport space; the flipped position is computed in the
+    // menu's own coordinate space (x/y may be relative to a scaled containing block).
     const rect = el.getBoundingClientRect();
+    setSize({ w: el.offsetWidth, h: el.offsetHeight });
     if (rect.right > window.innerWidth) setFlipX(true);
     if (rect.bottom > window.innerHeight) setFlipY(true);
   }, []);
 
   const hasAbsPos = x !== undefined && y !== undefined;
   const posStyle = hasAbsPos
-    ? { left: flipX ? undefined : x, right: flipX ? (window.innerWidth - x) : undefined, top: flipY ? undefined : y, bottom: flipY ? (window.innerHeight - y) : undefined }
+    ? { left: flipX ? Math.max(0, x - size.w) : x, top: flipY ? Math.max(0, y - size.h) : y }
     : isSubmenu
       ? { ...(flipX ? { right: '100%' } : { left: '100%' }), ...(flipY ? { bottom: 0 } : { top: 0 }) }
       : { left: 0, ...(flipY ? { bottom: '100%' } : { top: '100%' }) };

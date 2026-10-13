@@ -250,11 +250,31 @@ export function Window({
 
   // Fixed positioning inside a transformed/scaled embedder: map viewport coordinates into its space
   const [fixedOrigin, setFixedOrigin] = useState<FixedOrigin>(VIEWPORT_ORIGIN);
+  const originRef = useRef<FixedOrigin>(VIEWPORT_ORIGIN);
+  const isFixed = !!(draggable && dragPos);
   useLayoutEffect(() => {
-    if (!draggable || !dragPos) return;
-    const o = fixedOriginOf(boxRef.current);
-    if (o.left !== fixedOrigin.left || o.top !== fixedOrigin.top || o.scaleX !== fixedOrigin.scaleX || o.scaleY !== fixedOrigin.scaleY) setFixedOrigin(o);
-  }, [draggable, dragPos?.x, dragPos?.y]);
+    if (!isFixed) return;
+    const update = (keepLocal: boolean) => {
+      const o = fixedOriginOf(boxRef.current);
+      const prev = originRef.current;
+      if (o.left === prev.left && o.top === prev.top && o.scaleX === prev.scaleX && o.scaleY === prev.scaleY) return;
+      originRef.current = o;
+      setFixedOrigin(o);
+      // Container moved/rescaled after the window was placed: keep it at the same spot inside the container
+      if (keepLocal) {
+        setDragPos(dp => dp && {
+          x: o.left + (dp.x - prev.left) / prev.scaleX * o.scaleX,
+          y: o.top + (dp.y - prev.top) / prev.scaleY * o.scaleY,
+        });
+      }
+    };
+    update(false);
+    const onChange = () => update(true);
+    // The embedder may rescale or move its container (window resize, orientation change, scroll)
+    window.addEventListener('resize', onChange);
+    window.addEventListener('scroll', onChange, true);
+    return () => { window.removeEventListener('resize', onChange); window.removeEventListener('scroll', onChange, true); };
+  }, [isFixed, dragPos?.x, dragPos?.y]);
   const fixedPos = dragPos ? toFixedCoords(fixedOrigin, dragPos.x, dragPos.y) : null;
   const wrapStyle = draggable && fixedPos
     ? { position: 'fixed' as const, left: `${fixedPos.x}px`, top: `${fixedPos.y}px`, zIndex: 200 }

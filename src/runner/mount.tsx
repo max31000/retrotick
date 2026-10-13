@@ -38,7 +38,7 @@ interface RunnerAppProps {
 }
 
 function RunnerApp(p: RunnerAppProps) {
-  const [focused, setFocused] = useState(() => p.root.contains(document.activeElement));
+  const [focused, setFocused] = useState(() => p.root.contains(p.root.ownerDocument.activeElement));
   useEffect(() => {
     const onIn = () => setFocused(true);
     const onOut = (e: FocusEvent) => {
@@ -145,7 +145,7 @@ export async function mountGame(host: HTMLElement, opts: MountOptions): Promise<
       root.remove();
       removeKeyboardGuard();
       restoreColors();
-      storage.close();
+      storage.close().catch(() => { /* best effort */ });
       ownAudio?.close().catch(() => { /* already closed */ });
       emulator = null;
     },

@@ -44,15 +44,29 @@ export const LUNA_SYS_COLORS: Record<number, number> = {
   [COLOR_INFOBK]: rgb(255, 255, 225),
 };
 
+let lunaRefs = 0;
+let savedColors: Record<number, number> | null = null;
+
 /**
- * Replace the emulator's (module-global) system colour table with the Luna
- * scheme. Returns a function restoring the previous values. Note: the table is
- * shared by every emulator instance on the page.
+ * Switch the emulator's (module-global, shared by every emulator on the page)
+ * system colour table to the Luna scheme. Reference-counted: the original
+ * table is saved on the first apply and restored when the last user releases
+ * it. Returns the release function (idempotent).
  */
 export function applyLunaSysColors(): () => void {
-  const saved = { ...SYS_COLORS };
-  Object.assign(SYS_COLORS, LUNA_SYS_COLORS);
-  return () => { Object.assign(SYS_COLORS, saved); };
+  if (lunaRefs++ === 0) {
+    savedColors = { ...SYS_COLORS };
+    Object.assign(SYS_COLORS, LUNA_SYS_COLORS);
+  }
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    if (--lunaRefs === 0 && savedColors) {
+      Object.assign(SYS_COLORS, savedColors);
+      savedColors = null;
+    }
+  };
 }
 
 const LANG_RUSSIAN = 0x19;

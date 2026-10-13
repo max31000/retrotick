@@ -546,40 +546,48 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
     if (!storage) window.addEventListener('desktop-files-changed', onDesktopChanged);
 
     // Async init for registry + profiles, then start emulator
-    let regFlushTimer: ReturnType<typeof setTimeout> | null = null;
-    let profFlushTimer: ReturnType<typeof setTimeout> | null = null;
-    const initAndRun = async () => {
+    // Debounced persistence: pending saves are flushed (not dropped) on unmount,
+    // so settings written while the program exits (WM_DESTROY) survive.
+    const SAVE_DEBOUNCE_MS = 500;
+    let disposed = false;
+    const makeSaver = (save: () => Promise<void>, tag: string) => {
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const flush = () => {
+        if (timer === null) return;
+        clearTimeout(timer);
+        timer = null;
+        save().catch(e => console.warn(`[${tag}] Failed to save:`, e));
+      };
+      const schedule = () => {
+        if (timer !== null) clearTimeout(timer);
+        timer = setTimeout(flush, SAVE_DEBOUNCE_MS);
+      };
+      return { schedule, flush };
+    };
+    let regSaver: ReturnType<typeof makeSaver> | null = null;
+    let profSaver: ReturnType<typeof makeSaver> | null = null;
+    /** Resolves false when the view was unmounted before the program started. */
+    const initAndRun = async (): Promise<boolean> => {
       // Load registry, profiles, and virtual filesystem in parallel (independent IndexedDB reads)
       const [regData, profData] = await Promise.all([
         store.loadRegistry().catch(e => { console.warn('[REG] Failed to load registry from IndexedDB:', e); return null; }),
         store.loadProfiles().catch(e => { console.warn('[PROF] Failed to load profiles from IndexedDB:', e); return null; }),
         syncVirtualFiles(emu),
       ]);
+      if (disposed) return false;
 
       // Set up registry store with IndexedDB persistence
       const regStore = new RegistryStore();
       if (regData) regStore.deserialize(regData);
-      regStore.onChange = () => {
-        if (regFlushTimer !== null) clearTimeout(regFlushTimer);
-        regFlushTimer = setTimeout(() => {
-          store.saveRegistry(regStore.serialize()).catch(e =>
-            console.warn('[REG] Failed to save registry:', e)
-          );
-        }, 500);
-      };
+      regSaver = makeSaver(() => store.saveRegistry(regStore.serialize()), 'REG');
+      regStore.onChange = regSaver.schedule;
       emu.registryStore = regStore;
 
       // Set up profile store with IndexedDB persistence
       const profStore = new ProfileStore();
       if (profData) profStore.deserialize(profData);
-      profStore.onChange = () => {
-        if (profFlushTimer !== null) clearTimeout(profFlushTimer);
-        profFlushTimer = setTimeout(() => {
-          store.saveProfiles(profStore.serialize()).catch(e =>
-            console.warn('[PROF] Failed to save profiles:', e)
-          );
-        }, 500);
-      };
+      profSaver = makeSaver(() => store.saveProfiles(profStore.serialize()), 'PROF');
+      profStore.onChange = profSaver.schedule;
       emu.profileStore = profStore;
 
       // Apply DOS settings BEFORE load() so setupDosEnvironment sees the correct flags
@@ -597,6 +605,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
       emu.traceApi = dsPre.traceApi;
 
       await emu.load(arrayBuffer, peInfo, canvas);
+      return !disposed;
     };
 
     try {
@@ -660,7 +669,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
       emuRef.current = emu;
       // Dev-only hook for automated browser tests (Playwright) to inspect emulator state
       if (import.meta.env.DEV) ((window as unknown as { __retrotickEmus?: Emulator[] }).__retrotickEmus ??= []).push(emu);
-      (globalThis as typeof globalThis & { __emu?: unknown }).__emu = emu;
+      if (import.meta.env.DEV) (globalThis as typeof globalThis & { __emu?: unknown }).__emu = emu;
       onRegisterCloseHandler?.(() => {
         if (emu.mainWindow) {
           emu.postMessage(emu.mainWindow, WM_SYSCOMMAND, SC_CLOSE, 0);
@@ -879,7 +888,8 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
       };
 
       // Load registry from IndexedDB then start
-      initAndRun().then(() => {
+      initAndRun().then((alive) => {
+        if (!alive) return;
         // Apply post-load DOS settings that depend on objects created during load()
         if (emu.isDOS) {
           const ds = loadDosSettings();
@@ -925,15 +935,15 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
 
     return () => {
       if (!storage) window.removeEventListener('desktop-files-changed', onDesktopChanged);
-      if (regFlushTimer !== null) clearTimeout(regFlushTimer);
-      if (emuRef.current) {
-        if (processRegistry && emuRef.current.pid) {
-          processRegistry.unregister(emuRef.current.pid);
-        }
-        emuRef.current.destroyAudio();
-        emuRef.current.stop();
-        emuRef.current = null;
-      }
+      disposed = true;
+      regSaver?.flush();
+      profSaver?.flush();
+      if (processRegistry && emu.pid) processRegistry.unregister(emu.pid);
+      emu.destroyAudio();
+      emu.stop();
+      if (emuRef.current === emu) emuRef.current = null;
+      const g = globalThis as typeof globalThis & { __emu?: unknown };
+      if (g.__emu === emu) delete g.__emu;
       if (iconUrl) URL.revokeObjectURL(iconUrl);
     };
   }, [arrayBuffer, peInfo, resetCount]);
