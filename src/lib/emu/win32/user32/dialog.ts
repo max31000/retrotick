@@ -1,4 +1,5 @@
 import { type Emulator, type DialogControlInfo, type ControlOverlay, getNextCascadePos } from '../../emulator';
+import { updateWindowNow } from './paint-update';
 import type { WindowInfo } from './types';
 import { extractDialogs, parseDialogTemplate } from '../../../pe';
 import type { DialogTemplate } from '../../../pe/types';
@@ -371,7 +372,10 @@ export function registerDialog(emu: Emulator): void {
       // Dispatch queued messages
       while (emu.messageQueue.length > 0) {
         const msg = emu.messageQueue.shift()!;
-        const ret = emu.callWndProc(dlgWnd.wndProc, msg.hwnd, msg.message, msg.wParam, msg.lParam);
+        // A modal loop dispatches every thread message to its own window procedure
+        const target = emu.handles.get<WindowInfo>(msg.hwnd);
+        const proc = target && target.wndProc && msg.hwnd !== ds.hwnd ? target.wndProc : dlgWnd.wndProc;
+        const ret = emu.callWndProc(proc, msg.hwnd, msg.message, msg.wParam, msg.lParam);
         emu.cpu.eip = eipSave;
         emu.cpu.reg[4] = espSave;
         if (ds.ended) {
@@ -383,6 +387,16 @@ export function registerDialog(emu: Emulator): void {
           emu.waitingForMessage = savedWaiting;
           return;
         }
+      }
+
+      // Like the modal loop of DialogBox, repaint other windows of the thread (e.g. the owner
+      // behind the dialog) whose update region is pending.
+      for (const [h, w] of emu.handles.findByType('window') as [number, WindowInfo][]) {
+        if (h === ds.hwnd || !w?.visible || !w.needsPaint || !w.wndProc || w.painting) continue;
+        updateWindowNow(emu, h);
+        emu.cpu.eip = eipSave;
+        emu.cpu.reg[4] = espSave;
+        if (ds.ended) return;
       }
 
       // Synthesize WM_PAINT if needed (only for promoted dialogs that have their own canvas)
