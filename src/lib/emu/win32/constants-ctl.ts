@@ -80,3 +80,6 @@ export const GDI_ERROR = 0xFFFFFFFF;
 export const WM_DEADCHAR = 0x0103;
 export const WM_SYSCHAR = 0x0106;
 export const WM_SYSDEADCHAR = 0x0107;
+
+// --- DrawText formats (winuser.h) ---
+export const DT_BOTTOM = 0x0008;
