@@ -95,6 +95,7 @@ export async function startExe(opts) {
   }
   emu.exeName = opts.exe;
   if (opts.cmdLine) emu.commandLine = opts.cmdLine;
+  if (process.env.HARNESS_TRACE) emu.traceApi = true;
   await emu.load(exeBuf, peInfo, canvas);
   const menus = extractMenus(peInfo, exeBuf);
   if (menus.length > 0) emu.menuItems = menus[0].menu.items;

@@ -650,6 +650,8 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
       onSetupEmulator?.(emu);
 
       emuRef.current = emu;
+      // Dev-only hook for automated browser tests (Playwright) to inspect emulator state
+      if (import.meta.env.DEV) ((window as unknown as { __retrotickEmus?: Emulator[] }).__retrotickEmus ??= []).push(emu);
       (globalThis as typeof globalThis & { __emu?: unknown }).__emu = emu;
       onRegisterCloseHandler?.(() => {
         if (emu.mainWindow) {

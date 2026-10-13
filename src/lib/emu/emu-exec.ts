@@ -280,6 +280,7 @@ function callStdcall(emu: Emulator, addr: number, args: number[]): number | unde
           handler(emu);
           break;
         }
+        if (emu.traceApi) console.log(`[API] ${key} (nested)`);
         emu._currentThunkStackBytes = thunk.stackBytes;
         const retVal = handler(emu);
         // If a nested callWndProc was set up, execute it within this loop
@@ -481,6 +482,7 @@ export function emuCallWndProc16(emu: Emulator, wndProc: number, hwnd: number, m
           handler(emu);
           break;
         }
+        if (emu.traceApi) console.log(`[API] ${key} (nested)`);
         emu._currentThunkStackBytes = thunk.stackBytes;
         const retVal = handler(emu);
         // If a nested callWndProc16 was set up, execute it within this loop
@@ -588,6 +590,7 @@ export function emuCallDllMain(emu: Emulator, entryPoint: number, hModule: numbe
           handler(emu);
           break;
         }
+        if (emu.traceApi) console.log(`[API] ${key} (nested)`);
         emu._currentThunkStackBytes = thunk.stackBytes;
         const retVal = handler(emu);
         if (emu._wndProcSetupPending) {
