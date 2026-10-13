@@ -740,25 +740,8 @@ export function registerMisc(emu: Emulator): void {
   // ToAscii(uVirtKey, uScanCode, lpKeyState, lpChar, uFlags) → int
   user32.register('ToAscii', 5, () => 0);
 
-  // DDEML stubs
-  user32.register('DdeInitializeA', 3, () => {
-    // Return DMLERR_SYS_ERROR (0x400F) — DDE not available
-    const pidInstPtr = emu.readArg(0);
-    if (pidInstPtr) emu.memory.writeU32(pidInstPtr, 0);
-    return 0x400F;
-  });
-  user32.register('DdeUninitialize', 1, () => 1);
-  user32.register('DdeConnect', 4, () => 0); // NULL = failure
   // CopyIcon(hIcon) → HICON — just return the same handle
   user32.register('CopyIcon', 1, () => emu.readArg(0));
-
-  user32.register('DdeDisconnect', 1, () => 1);
-  user32.register('DdeCreateStringHandleA', 3, () => 0);
-  user32.register('DdeNameService', 4, () => 0);
-  user32.register('DdeClientTransaction', 8, () => 0);
-  user32.register('DdeAccessData', 2, () => 0);
-  user32.register('DdeUnaccessData', 1, () => 1);
-  user32.register('DdeQueryStringA', 5, () => 0);
 
   // SetWinEventHook(eventMin, eventMax, hmodWinEventProc, pfnWinEventProc, idProcess, idThread, dwFlags) → HWINEVENTHOOK
   user32.register('SetWinEventHook', 7, () => emu.handles.alloc('wineventhook', {}));

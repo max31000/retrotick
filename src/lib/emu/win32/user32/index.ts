@@ -16,6 +16,7 @@ import { registerScroll } from './scroll';
 import { registerFocus } from './focus';
 import { registerMisc } from './misc';
 import { registerClipboard } from './clipboard';
+import { registerDde } from './dde';
 
 export type { WindowInfo, WndClassInfo } from './types';
 
@@ -37,4 +38,5 @@ export function registerUser32(emu: Emulator): void {
   registerFocus(emu);
   registerMisc(emu);
   registerClipboard(emu);
+  registerDde(emu);
 }
