@@ -37,6 +37,8 @@ export interface WindowInfo {
   controlId?: number;
   needsPaint?: boolean;
   _ownerDrawPending?: boolean;
+  /** PAINTSTRUCT.fErase for the current BeginPaint */
+  paintFErase?: boolean;
   _odsSelected?: boolean;
   needsErase?: boolean;
   painting?: boolean;

@@ -1,7 +1,7 @@
 import type { Emulator } from './emulator';
 import type { DCInfo, BitmapInfo, BrushInfo, PenInfo } from './win32/gdi32/index';
 import type { WindowInfo } from './win32/user32/index';
-import { OPAQUE, SYS_COLORS, COLOR_BTNFACE } from './win32/types';
+import { OPAQUE, SYS_COLORS, COLOR_BTNFACE, WM_ERASEBKGND as WM_ERASEBKGND_MSG } from './win32/types';
 import { decodeDib } from '../pe/decode-dib';
 import { rvaToFileOffset } from '../pe/read';
 import { renderChildControls } from './emu-render';
@@ -271,6 +271,7 @@ export function beginPaint(emu: Emulator, hwnd: number): number {
   const hdc = getWindowDC(emu, hwnd);
   // Validate the region — clear needsPaint to prevent infinite WM_PAINT loop
   const wnd = emu.handles.get<WindowInfo>(hwnd);
+  const pendingErase = !!wnd?.needsErase;
   if (wnd) { wnd.needsPaint = false; wnd.needsErase = false; wnd.painting = true; }
   // Signal to DispatchMessage that BeginPaint was called (so it doesn't duplicate overlay notifications)
   emu._dispatchPaintUsedBeginPaint = true;
@@ -279,11 +280,18 @@ export function beginPaint(emu: Emulator, hwnd: number): number {
   // Must be applied before erase so child areas are protected
   applyClipChildren(emu, hwnd, wnd, hdc);
 
-  // Erase background: for dialogs, use COLOR_BTNFACE (WM_CTLCOLORDLG default);
-  // for regular windows, use the class brush
-  if (wnd) {
-    const dc = getDC(emu, hdc);
-    if (dc) {
+  // Like Windows, erase only when the update region was invalidated with erase pending, and
+  // let the window erase itself via WM_ERASEBKGND (DefWindowProc/DefDlgProc use the class
+  // brush / COLOR_BTNFACE). Erasing unconditionally would wipe what the window painted in
+  // its own WM_ERASEBKGND handler. Built-in windows without a wndProc get the class brush.
+  if (wnd) wnd.paintFErase = false;
+  if (wnd && pendingErase) {
+    if (wnd.wndProc) {
+      const handled = emu.callWndProc(wnd.wndProc, hwnd, WM_ERASEBKGND_MSG, hdc, 0);
+      // PAINTSTRUCT.fErase: TRUE when the window did not erase its background
+      wnd.paintFErase = !handled;
+    } else {
+      const dc = getDC(emu, hdc);
       const isDialog = wnd.classInfo.className === '#32770' || !!wnd.dlgProc;
       let bgColor: number | null = null;
       if (isDialog) {
@@ -292,7 +300,7 @@ export function beginPaint(emu: Emulator, hwnd: number): number {
         const brush = getBrush(emu, wnd.classInfo.hbrBackground);
         if (brush && !brush.isNull) bgColor = brush.color;
       }
-      if (bgColor !== null) {
+      if (dc && bgColor !== null) {
         const r = bgColor & 0xFF, g = (bgColor >> 8) & 0xFF, b = (bgColor >> 16) & 0xFF;
         dc.ctx.fillStyle = `rgb(${r},${g},${b})`;
         dc.ctx.fillRect(0, 0, wnd.width, wnd.height);

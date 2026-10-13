@@ -47,7 +47,7 @@ export function registerPaint(emu: Emulator): void {
     const hdc = emu.beginPaint(hwnd);
     // Validate the region (clear needsPaint)
     const wndBP = emu.handles.get<WindowInfo>(hwnd);
-    const hadErase = wndBP?.needsErase ?? false;
+    const hadErase = wndBP?.paintFErase ?? false;
     // needsPaint/painting are now cleared/set in emu.beginPaint()
 
     // Fill PAINTSTRUCT
