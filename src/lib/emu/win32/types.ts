@@ -382,3 +382,59 @@ export const WA_INACTIVE = 0;
 // DIB / BI constants
 export const DIB_RGB_COLORS = 0;
 export const BI_RGB = 0;
+
+// Shell special folders (CSIDL_*, shlobj.h)
+export const CSIDL_DESKTOP = 0x0000;
+export const CSIDL_PROGRAMS = 0x0002;
+export const CSIDL_PERSONAL = 0x0005;
+export const CSIDL_FAVORITES = 0x0006;
+export const CSIDL_STARTUP = 0x0007;
+export const CSIDL_RECENT = 0x0008;
+export const CSIDL_SENDTO = 0x0009;
+export const CSIDL_STARTMENU = 0x000B;
+export const CSIDL_MYMUSIC = 0x000D;
+export const CSIDL_DESKTOPDIRECTORY = 0x0010;
+export const CSIDL_FONTS = 0x0014;
+export const CSIDL_TEMPLATES = 0x0015;
+export const CSIDL_COMMON_STARTMENU = 0x0016;
+export const CSIDL_COMMON_PROGRAMS = 0x0017;
+export const CSIDL_COMMON_DESKTOPDIRECTORY = 0x0019;
+export const CSIDL_APPDATA = 0x001A;
+export const CSIDL_LOCAL_APPDATA = 0x001C;
+export const CSIDL_COMMON_FAVORITES = 0x001F;
+export const CSIDL_INTERNET_CACHE = 0x0020;
+export const CSIDL_COOKIES = 0x0021;
+export const CSIDL_HISTORY = 0x0022;
+export const CSIDL_COMMON_APPDATA = 0x0023;
+export const CSIDL_WINDOWS = 0x0024;
+export const CSIDL_SYSTEM = 0x0025;
+export const CSIDL_PROGRAM_FILES = 0x0026;
+export const CSIDL_MYPICTURES = 0x0027;
+export const CSIDL_PROFILE = 0x0028;
+export const CSIDL_PROGRAM_FILES_COMMON = 0x002B;
+export const CSIDL_COMMON_DOCUMENTS = 0x002E;
+export const CSIDL_FLAG_CREATE = 0x8000;
+export const CSIDL_FLAG_MASK = 0xFF00;
+export const S_OK = 0;
+export const S_FALSE = 1;
+export const E_INVALIDARG = 0x80070057;
+
+// DDEML (ddeml.h)
+export const DMLERR_NO_ERROR = 0x0000;
+export const DMLERR_INVALIDPARAMETER = 0x4006;
+export const DMLERR_NO_CONV_ESTABLISHED = 0x400A;
+export const DNS_REGISTER = 0x0001;
+export const DNS_UNREGISTER = 0x0002;
+export const CP_WINANSI = 1004;
+export const CP_WINUNICODE = 1200;
+export const HDATA_APPOWNED = 0x0001;
+
+// RPC status codes (rpcnterr.h / winerror.h)
+export const RPC_S_OK = 0;
+export const RPC_S_SERVER_UNAVAILABLE = 1722;
+export const EXCEPTION_EXECUTE_HANDLER = 1;
+
+// Security descriptors (winnt.h)
+export const SECURITY_DESCRIPTOR_MIN_LENGTH = 20;
+export const SECURITY_DESCRIPTOR_REVISION = 1;
+export const SE_SELF_RELATIVE = 0x8000;
