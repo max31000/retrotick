@@ -24,6 +24,7 @@ export function convertCharParam(wParam: number, fromWide: boolean, toWide: bool
 /** Fill an MSG structure. Queued character messages carry UTF-16; GetMessageA/PeekMessageA
  *  (wide = false) receive them in the ANSI code page. */
 export function writeMsgStruct(emu: Emulator, pMsg: number, msg: WinMsg, wide = true): void {
+  if (msg.keyState) emu.msgKeyState = msg.keyState;
   emu.memory.writeU32(pMsg, msg.hwnd);
   emu.memory.writeU32(pMsg + 4, msg.message);
   emu.memory.writeU32(pMsg + 8, isCharMessage(msg.message) ? convertCharParam(msg.wParam, true, wide) : msg.wParam);

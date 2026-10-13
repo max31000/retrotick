@@ -302,6 +302,8 @@ export function registerResource(emu: Emulator): void {
     return loadAccelTable(hInstance, resourceId);
   });
 
+  const SC_FIRST = 0xF000; // SC_SIZE, lowest window-menu command
+
   function translateAccelImpl(): number {
     const hWnd = emu.readArg(0);
     const hAccTable = emu.readArg(1);
@@ -323,9 +325,10 @@ export function registerResource(emu: Emulator): void {
         if (vKey !== accel.key) continue;
 
         // Check modifier state
-        const shiftDown = emu.keyStates.has(0x10);
-        const ctrlDown = emu.keyStates.has(0x11);
-        const altDown = emu.keyStates.has(0x12);
+        const ks = emu.msgKeyState ?? emu.keyStates;
+        const shiftDown = ks.has(0x10);
+        const ctrlDown = ks.has(0x11);
+        const altDown = ks.has(0x12);
 
         if (!!(accel.fVirt & FSHIFT) !== shiftDown) continue;
         if (!!(accel.fVirt & FCONTROL) !== ctrlDown) continue;
@@ -335,8 +338,9 @@ export function registerResource(emu: Emulator): void {
         if (vKey !== accel.key) continue;
       }
 
-      // Match found — send WM_COMMAND (or WM_SYSCOMMAND for Alt accelerators)
-      const msg = (accel.fVirt & FALT) ? WM_SYSCOMMAND : WM_COMMAND;
+      // Match found — WM_COMMAND, or WM_SYSCOMMAND only when the command is a window-menu
+      // (SC_*) item; the Alt modifier does not matter (MSDN TranslateAccelerator).
+      const msg = accel.cmd >= SC_FIRST ? WM_SYSCOMMAND : WM_COMMAND;
       // wParam: HIWORD=1 (accelerator), LOWORD=cmd
       const wParam = (1 << 16) | accel.cmd;
       emu.postMessage(hWnd, msg, wParam, 0);

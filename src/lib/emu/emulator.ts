@@ -38,6 +38,8 @@ export interface WinMsg {
   message: number;
   wParam: number;
   lParam: number;
+  /** Keyboard state when an input message was posted (GetKeyState is synchronous with the queue) */
+  keyState?: Set<number>;
 }
 
 export interface DialogControlInfo {
@@ -728,6 +730,8 @@ export class Emulator {
   glSyncYieldedThisFrame = false;
   glSyncAwaitingSwap = false;
   keyStates = new Set<number>(); // Currently pressed virtual key codes
+  /** Key state as of the last retrieved input message (GetKeyState); null = use keyStates */
+  msgKeyState: Set<number> | null = null;
   configuredLcid = 0x0409; // Set from regional settings at load time
   windowDCs = new Map<number, number>();
   private timers = new Map<string, number>();
@@ -1276,7 +1280,9 @@ export class Emulator {
         return;
       }
     }
-    queue.push({ hwnd, message, wParam, lParam });
+    // Input messages carry the keyboard state at the time they were generated
+    const isInput = (message >= 0x0100 && message <= 0x0109) || (message >= 0x0200 && message <= 0x020E);
+    queue.push(isInput ? { hwnd, message, wParam, lParam, keyState: new Set(this.keyStates) } : { hwnd, message, wParam, lParam });
     if (onAvail) {
       // Only resume immediately when the target thread is parked at its
       // suspension point. If it is executing a nested callback (JS-initiated

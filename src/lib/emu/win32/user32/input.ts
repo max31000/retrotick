@@ -46,9 +46,10 @@ export function registerInput(emu: Emulator): void {
   });
   user32.register('GetCursor', 0, () => emu.currentCursor);
   user32.register('ShowCursor', 1, () => 1);
+  // GetKeyState reflects the state as of the last input message retrieved from the queue
   user32.register('GetKeyState', 1, () => {
     const vk = emu.readArg(0) & 0xFF;
-    return emu.keyStates.has(vk) ? 0x8000 : 0;
+    return (emu.msgKeyState ?? emu.keyStates).has(vk) ? 0x8000 : 0;
   });
   user32.register('GetAsyncKeyState', 1, () => {
     const vk = emu.readArg(0) & 0xFF;
@@ -58,7 +59,7 @@ export function registerInput(emu: Emulator): void {
   user32.register('GetKeyboardState', 1, () => {
     const ptr = emu.readArg(0);
     for (let i = 0; i < 256; i++) {
-      emu.memory.writeU8(ptr + i, emu.keyStates.has(i) ? 0x80 : 0);
+      emu.memory.writeU8(ptr + i, (emu.msgKeyState ?? emu.keyStates).has(i) ? 0x80 : 0);
     }
     return 1;
   });
