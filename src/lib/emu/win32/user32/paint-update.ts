@@ -8,7 +8,7 @@ import { Region, type Rect } from '../../region';
 import { getUpdateRegion, invalidateWindow, validateWindow, clientRect } from './update-region';
 import { getRegion, setRegion, readRect, writeRect } from '../gdi32/region';
 import { pushVisClip, popVisClip } from '../gdi32/dc-clip';
-import { sendEraseBackground } from '../../emu-paint';
+import { sendEraseBackground, toDCCoords } from '../../emu-paint';
 import { dcGetImageData, dcPutImageData } from '../../emu-window';
 import {
   RGN_ERROR, NULLREGION, RDW_INVALIDATE, RDW_ERASE, RDW_VALIDATE, RDW_NOERASE, RDW_ALLCHILDREN,
@@ -35,7 +35,7 @@ function eraseNow(emu: Emulator, hwnd: number, wnd: WindowInfo): void {
   wnd.needsErase = false;
   const hdc = emu.getWindowDC(hwnd);
   const dc = emu.getDC(hdc);
-  if (dc) pushVisClip(dc, rgn);
+  if (dc) pushVisClip(dc, toDCCoords(emu, hwnd, wnd, rgn));
   sendEraseBackground(emu, hwnd, wnd, hdc);
   if (dc) popVisClip(dc);
   emu.releaseChildDC(hdc);

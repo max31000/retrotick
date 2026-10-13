@@ -7,11 +7,13 @@ import { renderChildControls } from './emu-render';
 import { Region, type Rect } from './region';
 import { getUpdateRegion, validateWindow, clientRect, invalidateWindow } from './win32/user32/update-region';
 import { pushVisClip, popVisClip } from './win32/gdi32/dc-clip';
+import { getNonClientMetrics } from './win32/user32/_helpers';
 import { getWindowDC, getDC, releaseChildDC, getBrush, isDescendantOfMain } from './emu-window';
 
 // Track DCs that have WS_CLIPCHILDREN state saved
 const clipChildrenDCSet = new Set<number>();
 const WS_CLIPCHILDREN = 0x02000000;
+const WS_CHILD = 0x40000000;
 
 function applyClipChildren(emu: Emulator, hwnd: number, wnd: WindowInfo | null, hdc: number): void {
   if (!wnd || !(wnd.style & WS_CLIPCHILDREN) || !wnd.childList || hwnd !== emu.mainWindow) return;
@@ -63,6 +65,20 @@ export function sendEraseBackground(emu: Emulator, hwnd: number, wnd: WindowInfo
   return true;
 }
 
+/** Child and popup DCs that share the main canvas have their origin at the window's
+ *  top-left corner (not the client area), so map a client-coordinate region onto them.
+ *  A whole-client update covers the whole window, borders included. */
+export function toDCCoords(emu: Emulator, hwnd: number, wnd: WindowInfo, rgn: Region): Region {
+  if (hwnd === emu.mainWindow || wnd.domCanvas) return rgn;
+  const client = clientRect(emu, wnd);
+  if (rgn.equals(new Region([client]))) return Region.fromRect(0, 0, wnd.width, wnd.height);
+  const isChild = !!(wnd.style & WS_CHILD);
+  const { bw, captionH, menuH } = getNonClientMetrics(wnd.style, !isChild && wnd.hMenu !== 0, emu.isNE);
+  const r = rgn.clone();
+  r.offset(bw, bw + captionH + menuH);
+  return r;
+}
+
 export function beginPaint(emu: Emulator, hwnd: number): number {
   const hdc = getWindowDC(emu, hwnd);
   const wnd = emu.handles.get<WindowInfo>(hwnd);
@@ -82,7 +98,7 @@ export function beginPaint(emu: Emulator, hwnd: number): number {
   // WS_CLIPCHILDREN must be applied before erasing so child areas are protected
   applyClipChildren(emu, hwnd, wnd, hdc);
   const dc = getDC(emu, hdc);
-  if (dc && rgn) pushVisClip(dc, rgn);
+  if (dc && rgn && wnd) pushVisClip(dc, toDCCoords(emu, hwnd, wnd, rgn));
 
   // Like Windows, erase only when the update region was invalidated with erase pending;
   // the window erases itself via WM_ERASEBKGND (clipped to the update region).
