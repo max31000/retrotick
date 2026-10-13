@@ -78,29 +78,7 @@ export function registerMenu(emu: Emulator): void {
 
   // --- Load from resource ---
 
-  user32.register('LoadMenuA', 2, () => {
-    const _hInstance = emu.readArg(0);
-    const menuNamePtr = emu.readArg(1);
-    let menuId: number | string;
-    if (menuNamePtr < 0x10000) {
-      menuId = menuNamePtr;
-    } else {
-      menuId = emu.memory.readCString(menuNamePtr);
-    }
-    return emu.handles.alloc('menu', { menuId, items: [] } as MenuData);
-  });
 
-  user32.register('LoadMenuW', 2, () => {
-    const _hInstance = emu.readArg(0);
-    const menuNamePtr = emu.readArg(1);
-    let menuId: number | string;
-    if (menuNamePtr < 0x10000) {
-      menuId = menuNamePtr;
-    } else {
-      menuId = emu.memory.readUTF16String(menuNamePtr);
-    }
-    return emu.handles.alloc('menu', { menuId, items: [] } as MenuData);
-  });
 
   // --- Set / Get window menu ---
 

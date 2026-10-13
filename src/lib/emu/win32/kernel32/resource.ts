@@ -1,7 +1,7 @@
 import type { Emulator } from '../../emulator';
 import { emuFindResourceEntryForModule } from '../../emu-load';
 
-function findResourceForModule(emu: Emulator, hModule: number, typeId: number | string, nameId: number | string): { dataRva: number; dataSize: number; imageBase: number } | null {
+export function findResourceForModule(emu: Emulator, hModule: number, typeId: number | string, nameId: number | string): { dataRva: number; dataSize: number; imageBase: number } | null {
   // Check if hModule points to a loaded DLL
   if (hModule && hModule !== emu.pe.imageBase) {
     for (const [, mod] of emu.loadedModules) {

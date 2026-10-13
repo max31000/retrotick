@@ -1,7 +1,7 @@
 import type { PEInfo, MenuResult, MenuTemplate, MenuItem } from './types';
 import { rvaToFileOffset, readAnsiStr } from './read';
 
-function parseMenuTemplate(arrayBuffer: ArrayBuffer, baseOffset: number, dataSize: number, encoding?: string): MenuTemplate {
+export function parseMenuTemplate(arrayBuffer: ArrayBuffer, baseOffset: number, dataSize: number, encoding?: string): MenuTemplate {
   const dv = new DataView(arrayBuffer, baseOffset, dataSize);
   let pos = 0;
 
