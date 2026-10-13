@@ -1,11 +1,9 @@
 import type { Emulator } from '../../emulator';
 import type { WindowInfo } from './types';
 import { getClientSize, getNonClientMetrics } from './_helpers';
-import { WM_SIZE, WM_MOVE } from '../types';
+import { WM_SIZE, WM_MOVE, WS_CHILD, WS_POPUP } from '../types';
 import { SIZE_RESTORED } from '../constants-ctl';
 
-const WS_CHILD = 0x40000000;
-const WS_POPUP = 0x80000000;
 
 /**
  * After WM_CREATE, CreateWindowEx sends WM_SIZE and WM_MOVE to child and popup windows

@@ -5,7 +5,7 @@
 import type { Emulator } from '../../emulator';
 import type { WindowInfo } from './types';
 import { getClientSize } from './_helpers';
-import { WM_SIZE } from '../types';
+import { WM_SIZE, WS_CHILD } from '../types';
 import {
   SB_SETTEXTA, SB_SETTEXTW, SB_GETTEXTA, SB_GETTEXTW, SB_GETTEXTLENGTHA, SB_GETTEXTLENGTHW,
   SB_SETPARTS, SB_GETPARTS, SB_GETBORDERS, SB_SETMINHEIGHT, SB_SIMPLE, SB_ISSIMPLE, SB_GETRECT,
@@ -71,7 +71,7 @@ function partBounds(wnd: WindowInfo, part: number): { l: number; t: number; r: n
 
 function dockToParent(emu: Emulator, wnd: WindowInfo): void {
   const s = state(wnd);
-  if (wnd.style & CCS_NORESIZE) return;
+  if ((wnd.style & CCS_NORESIZE) || !(wnd.style & WS_CHILD)) return;
   const parent = emu.handles.get<WindowInfo>(wnd.parent);
   if (!parent) return;
   const { cw, ch } = getClientSize(parent.style, parent.hMenu !== 0, parent.width, parent.height, emu.isNE);

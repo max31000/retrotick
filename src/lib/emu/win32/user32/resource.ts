@@ -1,4 +1,6 @@
 import type { Emulator } from '../../emulator';
+import { SC_FIRST } from '../constants-ctl';
+import type { WindowInfo } from './types';
 import type { AccelEntry } from '../../../pe/types';
 import { rvaToFileOffset } from '../../../pe/read';
 import { WM_KEYDOWN, WM_SYSKEYDOWN, WM_COMMAND, WM_SYSCOMMAND } from '../types';
@@ -302,8 +304,6 @@ export function registerResource(emu: Emulator): void {
     return loadAccelTable(hInstance, resourceId);
   });
 
-  const SC_FIRST = 0xF000; // SC_SIZE, lowest window-menu command
-
   function translateAccelImpl(): number {
     const hWnd = emu.readArg(0);
     const hAccTable = emu.readArg(1);
@@ -343,7 +343,10 @@ export function registerResource(emu: Emulator): void {
       const msg = accel.cmd >= SC_FIRST ? WM_SYSCOMMAND : WM_COMMAND;
       // wParam: HIWORD=1 (accelerator), LOWORD=cmd
       const wParam = (1 << 16) | accel.cmd;
-      emu.postMessage(hWnd, msg, wParam, 0);
+      // TranslateAccelerator sends the command straight to the window procedure
+      const target = emu.handles.get<WindowInfo>(hWnd);
+      if (target?.wndProc) emu.callWndProc(target.wndProc, hWnd, msg, wParam, 0);
+      else emu.postMessage(hWnd, msg, wParam, 0);
       return 1;
     }
 

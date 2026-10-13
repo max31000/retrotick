@@ -330,7 +330,7 @@ export function registerText(emu: Emulator): void {
     }
 
     // DrawText returns the height of the text (offset to its bottom with DT_VCENTER/DT_BOTTOM)
-    return textHeight;
+    return Math.round(textHeight);
   });
 
   // DrawTextW

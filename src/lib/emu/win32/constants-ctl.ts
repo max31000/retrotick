@@ -83,3 +83,6 @@ export const WM_SYSDEADCHAR = 0x0107;
 
 // --- DrawText formats (winuser.h) ---
 export const DT_BOTTOM = 0x0008;
+
+// --- Window-menu commands (winuser.h): SC_SIZE is the lowest SC_* value ---
+export const SC_FIRST = 0xF000;
