@@ -9,6 +9,7 @@ import { registerDialog } from './dialog';
 import { registerTimer } from './timer';
 import { registerRect } from './rect';
 import { registerMenu } from './menu';
+import { registerMenuLoad } from './menu-load';
 import { registerResource } from './resource';
 import { registerInput } from './input';
 import { registerWindowLong } from './window-long';
@@ -18,6 +19,7 @@ import { registerFocus } from './focus';
 import { registerMisc } from './misc';
 import { registerClipboard } from './clipboard';
 import { registerDde } from './dde';
+import { registerKeyboardLayout } from './keyboard-layout';
 
 export type { WindowInfo, WndClassInfo } from './types';
 
@@ -32,6 +34,7 @@ export function registerUser32(emu: Emulator): void {
   registerTimer(emu);
   registerRect(emu);
   registerMenu(emu);
+  registerMenuLoad(emu);
   registerResource(emu);
   registerInput(emu);
   registerWindowLong(emu);
@@ -41,4 +44,5 @@ export function registerUser32(emu: Emulator): void {
   registerMisc(emu);
   registerClipboard(emu);
   registerDde(emu);
+  registerKeyboardLayout(emu);
 }

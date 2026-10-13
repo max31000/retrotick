@@ -14,6 +14,8 @@ export interface WndClassInfo {
   className: string;
   /** For superclassed controls: the base built-in class name (e.g. "EDIT" for Delphi's "TEdit") */
   baseClassName?: string;
+  /** Registered with RegisterClass(Ex)W */
+  unicode?: boolean;
 }
 
 export interface WindowInfo {
@@ -21,6 +23,8 @@ export interface WindowInfo {
   classInfo: WndClassInfo;
   wndProc: number;
   rawWndProc?: number;
+  /** IsWindowUnicode: the window procedure expects UTF-16 text/char messages */
+  unicode?: boolean;
   parent: number;
   x: number;
   y: number;

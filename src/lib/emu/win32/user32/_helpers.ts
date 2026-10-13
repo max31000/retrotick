@@ -2,13 +2,31 @@ import type { Emulator } from '../../emulator';
 
 import type { WinMsg } from '../../emulator';
 import type { WindowInfo } from './types';
-import { WS_CAPTION, WS_DLGFRAME, WS_BORDER, WS_THICKFRAME, WM_GETMINMAXINFO } from '../types';
+import { WS_CAPTION, WS_DLGFRAME, WS_BORDER, WS_THICKFRAME, WM_GETMINMAXINFO, WM_CHAR } from '../types';
+import { WM_DEADCHAR, WM_SYSCHAR, WM_SYSDEADCHAR } from '../constants-ctl';
+import { encodeMBCS, decodeMBCS } from '../../memory';
 
 // Helper: write a WinMsg into a MSG struct at pMsg, filling pt from lParam for mouse messages
-export function writeMsgStruct(emu: Emulator, pMsg: number, msg: WinMsg): void {
+export function isCharMessage(m: number): boolean {
+  return m === WM_CHAR || m === WM_DEADCHAR || m === WM_SYSCHAR || m === WM_SYSDEADCHAR;
+}
+
+/** Convert a character message wParam between the ANSI code page and UTF-16.
+ *  `fromWide`: wParam is UTF-16; `toWide`: the receiver expects UTF-16. */
+export function convertCharParam(wParam: number, fromWide: boolean, toWide: boolean): number {
+  const c = wParam & 0xFFFF;
+  if (fromWide === toWide || c < 0x80) return wParam;
+  if (toWide) return decodeMBCS(new Uint8Array([c & 0xFF])).charCodeAt(0) || c;
+  const b = encodeMBCS(String.fromCharCode(c));
+  return b.length ? b[b.length - 1] : 0x3F;
+}
+
+/** Fill an MSG structure. Queued character messages carry UTF-16; GetMessageA/PeekMessageA
+ *  (wide = false) receive them in the ANSI code page. */
+export function writeMsgStruct(emu: Emulator, pMsg: number, msg: WinMsg, wide = true): void {
   emu.memory.writeU32(pMsg, msg.hwnd);
   emu.memory.writeU32(pMsg + 4, msg.message);
-  emu.memory.writeU32(pMsg + 8, msg.wParam);
+  emu.memory.writeU32(pMsg + 8, isCharMessage(msg.message) ? convertCharParam(msg.wParam, true, wide) : msg.wParam);
   emu.memory.writeU32(pMsg + 12, msg.lParam);
   emu.memory.writeU32(pMsg + 16, (Date.now() & 0xFFFFFFFF) >>> 0); // time
   // pt: for mouse messages (0x200..0x20d), convert client coords from lParam to screen coords

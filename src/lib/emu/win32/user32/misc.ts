@@ -744,13 +744,12 @@ export function registerMisc(emu: Emulator): void {
   user32.register('RegisterTasklist', 1, () => 1);
 
   // IsWindowUnicode(hWnd) — return FALSE (we treat everything as ANSI)
-  user32.register('IsWindowUnicode', 1, () => 0);
+  user32.register('IsWindowUnicode', 1, () => (emu.handles.get<WindowInfo>(emu.readArg(0))?.unicode ? 1 : 0));
 
   // ExitWindowsEx(uFlags, dwReserved) → BOOL
   user32.register('ExitWindowsEx', 2, () => 1);
 
   // ToAscii(uVirtKey, uScanCode, lpKeyState, lpChar, uFlags) → int
-  user32.register('ToAscii', 5, () => 0);
 
   // CopyIcon(hIcon) → HICON — just return the same handle
   user32.register('CopyIcon', 1, () => emu.readArg(0));

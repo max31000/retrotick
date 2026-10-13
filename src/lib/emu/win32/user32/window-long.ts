@@ -29,7 +29,7 @@ export function registerWindowLong(emu: Emulator): void {
     return 0;
   });
 
-  user32.register('SetWindowLongA', 3, () => {
+  const setWindowLongImpl = (): number => {
     const hwnd = emu.readArg(0);
     const index = emu.readArg(1) | 0;
     const value = emu.readArg(2);
@@ -62,11 +62,20 @@ export function registerWindowLong(emu: Emulator): void {
       wnd.extraBytes[index + 3] = (value >> 24) & 0xFF;
     }
     return old;
-  });
+  };
 
   // W versions are identical to A
   user32.register('GetWindowLongW', 2, emu.apiDefs.get('USER32.DLL:GetWindowLongA')?.handler!);
-  user32.register('SetWindowLongW', 3, emu.apiDefs.get('USER32.DLL:SetWindowLongA')?.handler!);
+  // Subclassing through the A or W function sets the window's character set (IsWindowUnicode)
+  const setLong = (wide: boolean) => () => {
+    const wnd = emu.handles.get<WindowInfo>(emu.readArg(0));
+    const index = emu.readArg(1) | 0;
+    const r = setWindowLongImpl();
+    if (wnd && index === -4) wnd.unicode = wide;
+    return r;
+  };
+  user32.register('SetWindowLongA', 3, setLong(false));
+  user32.register('SetWindowLongW', 3, setLong(true));
 
   const getPropKey = (namePtr: number, wide: boolean): string => {
     if (namePtr < 0x10000) return `#ATOM:${namePtr}`;

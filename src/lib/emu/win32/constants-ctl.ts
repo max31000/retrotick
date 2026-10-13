@@ -75,3 +75,8 @@ export const TA_VERT_MASK = 0x0018;
 export const ETO_OPAQUE = 0x0002;
 export const ETO_CLIPPED = 0x0004;
 export const GDI_ERROR = 0xFFFFFFFF;
+
+// --- Character messages (winuser.h) ---
+export const WM_DEADCHAR = 0x0103;
+export const WM_SYSCHAR = 0x0106;
+export const WM_SYSDEADCHAR = 0x0107;

@@ -1,6 +1,6 @@
 import type { Emulator } from '../../emulator';
 import type { WindowInfo, TreeViewItem, ListViewColumn, ListViewItem } from './types';
-import { writeMsgStruct } from './_helpers';
+import { writeMsgStruct, isCharMessage, convertCharParam } from './_helpers';
 import { encodeMBCS } from '../../memory';
 import { emuCompleteThunk } from '../../emu-exec';
 import { getNextCascadePos } from '../../emulator';
@@ -55,7 +55,7 @@ export function registerMessage(emu: Emulator): void {
     return null;
   };
 
-  user32.register('GetMessageA', 4, () => {
+  const getMessageImpl = (wide: boolean) => (): number | undefined => {
     const pMsg = emu.readArg(0);
     const _hWnd = emu.readArg(1);
     const _msgFilterMin = emu.readArg(2);
@@ -63,14 +63,14 @@ export function registerMessage(emu: Emulator): void {
 
     if (emu.messageQueue.length > 0) {
       const msg = emu.messageQueue.shift()!;
-      writeMsgStruct(emu, pMsg, msg);
+      writeMsgStruct(emu, pMsg, msg, wide);
       return msg.message === WM_QUIT ? 0 : 1;
     }
 
     // Synthesize WM_PAINT if any window needs repainting
     const paintMsg = synthesizePaint();
     if (paintMsg) {
-      writeMsgStruct(emu, pMsg, paintMsg);
+      writeMsgStruct(emu, pMsg, paintMsg, wide);
       return 1;
     }
 
@@ -79,7 +79,7 @@ export function registerMessage(emu: Emulator): void {
     emu.waitingForMessage = true;
     emu._onMessageAvailable = () => {
       const msg = emu.messageQueue.shift()!;
-      writeMsgStruct(emu, pMsg, msg);
+      writeMsgStruct(emu, pMsg, msg, wide);
       emu.waitingForMessage = false;
       emuCompleteThunk(emu, msg.message === WM_QUIT ? 0 : 1, stackBytes);
       if (emu.running && !emu.halted) {
@@ -87,9 +87,10 @@ export function registerMessage(emu: Emulator): void {
       }
     };
     return undefined;
-  });
+  };
+  user32.register('GetMessageA', 4, getMessageImpl(false));
 
-  user32.register('PeekMessageA', 5, () => {
+  const peekMessageImpl = (wide: boolean) => (): number | undefined => {
     const pMsg = emu.readArg(0);
     const hWnd = emu.readArg(1);
     const msgFilterMin = emu.readArg(2);
@@ -109,7 +110,7 @@ export function registerMessage(emu: Emulator): void {
 
     if (idx >= 0) {
       const msg = (removeFlag & PM_REMOVE) ? emu.messageQueue.splice(idx, 1)[0] : emu.messageQueue[idx];
-      writeMsgStruct(emu, pMsg, msg);
+      writeMsgStruct(emu, pMsg, msg, wide);
       return 1;
     }
 
@@ -120,7 +121,7 @@ export function registerMessage(emu: Emulator): void {
       const paintMsg = synthesizePaint(!!(removeFlag & PM_REMOVE));
       if (paintMsg) {
         if (!hasFilter || (paintMsg.message >= msgFilterMin && paintMsg.message <= msgFilterMax)) {
-          writeMsgStruct(emu, pMsg, paintMsg);
+          writeMsgStruct(emu, pMsg, paintMsg, wide);
           return 1;
         }
       }
@@ -147,7 +148,8 @@ export function registerMessage(emu: Emulator): void {
       return undefined;
     }
     return 0;
-  });
+  };
+  user32.register('PeekMessageA', 5, peekMessageImpl(false));
 
   user32.register('WaitMessage', 0, () => {
     // WaitMessage blocks until a message is available.
@@ -259,14 +261,15 @@ export function registerMessage(emu: Emulator): void {
     return 0;
   });
 
-  user32.register('DispatchMessageA', 1, () => {
+  const dispatchMessageImpl = (wide: boolean) => (): number | undefined => {
     const pMsg = emu.readArg(0);
     const hwnd = emu.memory.readU32(pMsg);
     const message = emu.memory.readU32(pMsg + 4);
-    const wParam = emu.memory.readU32(pMsg + 8);
+    let wParam = emu.memory.readU32(pMsg + 8);
     const lParam = emu.memory.readU32(pMsg + 12);
     const wnd = emu.handles.get<WindowInfo>(hwnd);
     if (!wnd) return 0;
+    if (isCharMessage(message)) wParam = convertCharParam(wParam, wide, !!wnd.unicode);
 
     // WM_TIMER with non-zero lParam: call the timer callback directly
     // lpTimerFunc signature: void CALLBACK TimerProc(HWND, UINT, UINT_PTR, DWORD)
@@ -324,7 +327,8 @@ export function registerMessage(emu: Emulator): void {
     }
 
     return ret;
-  });
+  };
+  user32.register('DispatchMessageA', 1, dispatchMessageImpl(false));
 
   user32.register('PostMessageA', 4, () => {
     const hwnd = emu.readArg(0);
@@ -2017,9 +2021,9 @@ export function registerMessage(emu: Emulator): void {
   });
 
   // W versions are functionally identical to their A counterparts
-  user32.register('GetMessageW', 4, emu.apiDefs.get('USER32.DLL:GetMessageA')?.handler!);
-  user32.register('PeekMessageW', 5, emu.apiDefs.get('USER32.DLL:PeekMessageA')?.handler!);
-  user32.register('DispatchMessageW', 1, emu.apiDefs.get('USER32.DLL:DispatchMessageA')?.handler!);
+  user32.register('GetMessageW', 4, getMessageImpl(true));
+  user32.register('PeekMessageW', 5, peekMessageImpl(true));
+  user32.register('DispatchMessageW', 1, dispatchMessageImpl(true));
   user32.register('PostMessageW', 4, emu.apiDefs.get('USER32.DLL:PostMessageA')?.handler!);
 
   user32.register('PostThreadMessageW', 4, () => 1); // pretend success

@@ -102,7 +102,7 @@ export function registerRegisterClass(emu: Emulator): void {
     const cls: WndClassInfo = {
       style, wndProc, cbClsExtra, cbWndExtra,
       hInstance, hIcon, hCursor, hbrBackground,
-      menuName: menuNamePtr, className,
+      menuName: menuNamePtr, className, unicode: true,
     };
     return registerClass(cls, ptr);
   });
@@ -126,7 +126,7 @@ export function registerRegisterClass(emu: Emulator): void {
     const cls: WndClassInfo = {
       style, wndProc, cbClsExtra, cbWndExtra,
       hInstance, hIcon, hCursor, hbrBackground,
-      menuName: menuNamePtr, className,
+      menuName: menuNamePtr, className, unicode: true,
     };
     return registerClass(cls, ptr);
   });

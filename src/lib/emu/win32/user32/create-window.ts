@@ -82,6 +82,7 @@ export function registerCreateWindow(emu: Emulator): void {
     const wnd: WindowInfo = {
       hwnd: 0,
       classInfo: cls,
+      unicode: cls.wndProc ? !!cls.unicode : false,
       wndProc: cls.wndProc,
       parent: hParent,
       x, y, width, height,
@@ -233,6 +234,7 @@ export function registerCreateWindow(emu: Emulator): void {
 
     const wnd: WindowInfo = {
       hwnd: 0, classInfo: cls,
+      unicode: cls.wndProc ? !!cls.unicode : true,
       wndProc: cls.wndProc,
       parent: hParent,
       x, y, width, height,
