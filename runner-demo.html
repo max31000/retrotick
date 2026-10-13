@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>RetroTick runner demo</title>
+  <style>
+    html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #1d2b44; color: #e8eef8; }
+    header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; background: #13203a; }
+    header button { padding: 4px 10px; }
+    #host { position: relative; height: calc(100% - 120px); min-height: 480px; background: linear-gradient(180deg, #3a7bd5 0%, #6aa6e8 55%, #8cc152 56%, #5a9a2a 100%); overflow: auto; }
+    #log { height: 64px; overflow: auto; margin: 0; padding: 4px 12px; background: #0e1830; font: 12px ui-monospace, monospace; }
+  </style>
+</head>
+<body>
+  <header>
+    <label>XP files folder: <input id="dir" type="file" webkitdirectory multiple /></label>
+    <label>or files: <input id="files" type="file" multiple /></label>
+    <span id="games"></span>
+    <button id="unmount" disabled>Unmount</button>
+  </header>
+  <div id="host"></div>
+  <pre id="log"></pre>
+  <script type="module" src="/src/runner/demo/demo.ts"></script>
+</body>
+</html>
