@@ -1,5 +1,6 @@
 import type { Emulator } from '../emulator';
 import { emuCompleteThunk } from '../emu-exec';
+import { registerShellFolders } from './shell32-folders';
 
 function shellAbout(emu: Emulator, isWide: boolean): number | undefined {
   const _hwnd = emu.readArg(0);
@@ -41,6 +42,7 @@ function shellAbout(emu: Emulator, isWide: boolean): number | undefined {
 
 export function registerShell32(emu: Emulator): void {
   const shell32 = emu.registerDll('SHELL32.DLL');
+  registerShellFolders(emu, shell32);
 
   shell32.register('ShellAboutA', 4, () => shellAbout(emu, false));
   shell32.register('ShellAboutW', 4, () => shellAbout(emu, true));
