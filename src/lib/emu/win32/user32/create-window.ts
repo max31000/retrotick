@@ -1,3 +1,4 @@
+import { isSecondaryTopLevelDialog, showModelessDialog, hideModelessDialog } from './modeless-dialog';
 import { type Emulator, getNextCascadePos } from '../../emulator';
 import type { WindowInfo } from './types';
 import { getClientSize, clampToMinTrackSize } from './_helpers';
@@ -8,6 +9,10 @@ import {
   WM_NCDESTROY, WM_WINDOWPOSCHANGED,
   CW_USEDEFAULT, HCBT_CREATEWND,
 } from '../types';
+
+/** Lower bound for CW_USEDEFAULT sizes on tiny screens */
+const DEFAULT_MIN_WIDTH = 320;
+const DEFAULT_MIN_HEIGHT = 240;
 
 export function registerCreateWindow(emu: Emulator): void {
   const user32 = emu.registerDll('USER32.DLL');
@@ -59,7 +64,12 @@ export function registerCreateWindow(emu: Emulator): void {
       const pos = cls.wndProc ? getNextCascadePos(emu.screenWidth, emu.screenHeight) : { x: 0, y: 0 };
       x = pos.x;
       y = y === (CW_USEDEFAULT | 0) ? pos.y : y;
-      if ((width | 0) === (CW_USEDEFAULT | 0) || width === 0) width = 320;
+      if ((width | 0) === (CW_USEDEFAULT | 0)) {
+        // Like Windows (cf. Wine WIN_FixCoordinates): 3/4 of the screen, minus the cascade offset
+        width = Math.max(DEFAULT_MIN_WIDTH, Math.floor(emu.screenWidth * 3 / 4) - x);
+        height = Math.max(DEFAULT_MIN_HEIGHT, Math.floor(emu.screenHeight * 3 / 4) - y);
+      }
+      if (width === 0) width = 320;
       if ((height | 0) === (CW_USEDEFAULT | 0) || height === 0) height = 240;
     } else {
       if ((width | 0) === (CW_USEDEFAULT | 0)) width = 320;
@@ -200,7 +210,12 @@ export function registerCreateWindow(emu: Emulator): void {
       const pos = cls.wndProc ? getNextCascadePos(emu.screenWidth, emu.screenHeight) : { x: 0, y: 0 };
       x = pos.x;
       y = y === (CW_USEDEFAULT | 0) ? pos.y : y;
-      if ((width | 0) === (CW_USEDEFAULT | 0) || width === 0) width = 320;
+      if ((width | 0) === (CW_USEDEFAULT | 0)) {
+        // Like Windows (cf. Wine WIN_FixCoordinates): 3/4 of the screen, minus the cascade offset
+        width = Math.max(DEFAULT_MIN_WIDTH, Math.floor(emu.screenWidth * 3 / 4) - x);
+        height = Math.max(DEFAULT_MIN_HEIGHT, Math.floor(emu.screenHeight * 3 / 4) - y);
+      }
+      if (width === 0) width = 320;
       if ((height | 0) === (CW_USEDEFAULT | 0) || height === 0) height = 240;
     } else {
       if ((width | 0) === (CW_USEDEFAULT | 0)) width = 320;
@@ -320,6 +335,7 @@ export function registerCreateWindow(emu: Emulator): void {
         }
       }
     }
+    hideModelessDialog(emu, hwnd);
     // If this was the main window, clear it so the next shown window can be promoted
     if (hwnd === emu.mainWindow) {
       console.log(`[WND] mainWindow 0x${hwnd.toString(16)} destroyed, clearing`);
@@ -347,6 +363,12 @@ export function registerCreateWindow(emu: Emulator): void {
       wnd.maximized = true; wnd.minimized = false;
     } else if (nCmdShow === SW_RESTORE || nCmdShow === SW_SHOWNORMAL || nCmdShow === SW_SHOW) {
       wnd.minimized = false; wnd.maximized = false;
+    }
+
+    // Secondary top-level dialogs (CreateDialog*) are presented in the dialog overlay
+    if (isSecondaryTopLevelDialog(emu, hwnd, wnd)) {
+      if (wnd.visible && !wasVisible) showModelessDialog(emu, hwnd);
+      else if (!wnd.visible) hideModelessDialog(emu, hwnd);
     }
 
     // If no mainWindow yet, promote the first visible top-level window with actual size
