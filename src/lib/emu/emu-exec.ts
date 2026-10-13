@@ -212,8 +212,9 @@ function callStdcall(emu: Emulator, addr: number, args: number[]): number | unde
   const savedWaiting = emu.waitingForMessage;
   emu.waitingForMessage = false;
   // Every synchronous thunk completion inside the callback bumps the thread's
-  // suspendSeq; restore it afterwards so the outer suspension's pending resume
-  // (e.g. a Sleep timer) is not mistaken for stale and dropped.
+  // suspendSeq; restore it once the callback has returned so a suspension that
+  // was pending around it (e.g. a Sleep timer — callers such as the menu code may
+  // have cleared waitingForMessage before calling) is not mistaken for stale.
   const suspendThread = emu.currentThread;
   const savedSuspendSeq = suspendThread ? suspendThread.suspendSeq : 0;
 
@@ -236,7 +237,7 @@ function callStdcall(emu: Emulator, addr: number, args: number[]): number | unde
       e.cpu.eip = savedEIP;
       e.cpu.reg[4] = savedESP;
       e.waitingForMessage = savedWaiting;
-      if (savedWaiting && suspendThread) suspendThread.suspendSeq = savedSuspendSeq;
+      if (suspendThread) suspendThread.suspendSeq = savedSuspendSeq;
       e.flushPendingMessage();
     },
   };
@@ -376,7 +377,7 @@ function callStdcall(emu: Emulator, addr: number, args: number[]): number | unde
   emu.cpu.eip = savedEIP;
   emu.cpu.reg[4] = savedESP;
   emu.waitingForMessage = savedWaiting;
-  if (savedWaiting && suspendThread) suspendThread.suspendSeq = savedSuspendSeq;
+  if (suspendThread) suspendThread.suspendSeq = savedSuspendSeq;
   emu.flushPendingMessage();
 
   return emu.wndProcResult;
