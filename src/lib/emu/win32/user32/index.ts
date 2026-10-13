@@ -4,6 +4,7 @@ import { registerCreateWindow } from './create-window';
 import { registerMessage } from './message';
 import { registerWndProc } from './wndproc';
 import { registerPaint } from './paint';
+import { registerPaintUpdate } from './paint-update';
 import { registerDialog } from './dialog';
 import { registerTimer } from './timer';
 import { registerRect } from './rect';
@@ -26,6 +27,7 @@ export function registerUser32(emu: Emulator): void {
   registerMessage(emu);
   registerWndProc(emu);
   registerPaint(emu);
+  registerPaintUpdate(emu);
   registerDialog(emu);
   registerTimer(emu);
   registerRect(emu);

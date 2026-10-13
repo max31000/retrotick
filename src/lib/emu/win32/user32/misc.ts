@@ -664,7 +664,6 @@ export function registerMisc(emu: Emulator): void {
   // GetMenuItemInfoW — moved to menu.ts
 
   // GetUpdateRgn(hwnd, hRgn, bErase) → int
-  user32.register('GetUpdateRgn', 3, () => 1); // NULLREGION
 
   // SendMessageTimeoutW(hwnd, Msg, wParam, lParam, fuFlags, uTimeout) → LRESULT
   user32.register('SendMessageTimeoutW', 6, () => 1);

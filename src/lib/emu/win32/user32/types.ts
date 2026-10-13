@@ -1,3 +1,5 @@
+import type { Region, Rect } from '../../region';
+
 export interface WndClassInfo {
   style: number;
   wndProc: number;
@@ -41,6 +43,14 @@ export interface WindowInfo {
   paintFErase?: boolean;
   _odsSelected?: boolean;
   needsErase?: boolean;
+  /** Pending update region in client coordinates; undefined while needsPaint = whole client. */
+  updateRgn?: Region;
+  /** rcPaint of the current BeginPaint */
+  paintRect?: Rect;
+  /** Incremented by BeginPaint / validation, to detect WM_PAINT handlers that never validate */
+  paintSerial?: number;
+  /** A synthesized WM_PAINT for this window is being delivered */
+  _paintQueued?: boolean;
   painting?: boolean;
   minimized?: boolean;
   maximized?: boolean;

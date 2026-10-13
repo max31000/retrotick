@@ -3,6 +3,7 @@ import type { WindowInfo } from './win32/user32/index';
 import type { BrushInfo } from './win32/gdi32/types';
 import { renderButton, renderStatic, renderEdit } from './emu-render-controls';
 import { getNonClientMetrics } from './win32/user32/_helpers';
+import { statusBarDisplay } from './win32/user32/statusbar';
 import {
   WM_CTLCOLORSTATIC, WM_CTLCOLORBTN, SYS_COLORS, COLOR_BTNFACE, COLOR_BTNTEXT,
   ODT_BUTTON, ODA_DRAWENTIRE, ODS_SELECTED, ODS_DISABLED,
@@ -100,8 +101,14 @@ function buildOverlays(emu: Emulator, allChildren: CollectedChild[]): ControlOve
     if (child.cbSelectedIndex !== undefined) overlay.cbSelectedIndex = child.cbSelectedIndex;
     if (child.listColumns) overlay.listColumns = child.listColumns;
     if (child.listItems) overlay.listItems = child.listItems;
-    if (child.statusTexts) overlay.statusTexts = child.statusTexts;
-    if (child.statusParts) overlay.statusParts = child.statusParts;
+    if ((child as WindowInfo & { _sb?: unknown })._sb) {
+      const sb = statusBarDisplay(child);
+      overlay.statusTexts = sb.texts;
+      overlay.statusParts = sb.parts;
+    } else {
+      if (child.statusTexts) overlay.statusTexts = child.statusTexts;
+      if (child.statusParts) overlay.statusParts = child.statusParts;
+    }
     if (child.tabItems) overlay.tabItems = child.tabItems;
     if (child.tabSelectedIndex !== undefined) overlay.tabSelectedIndex = child.tabSelectedIndex;
 

@@ -95,7 +95,6 @@ export function registerScroll(emu: Emulator): void {
     return 1;
   });
 
-  user32.register('ScrollWindow', 5, () => 1);
   user32.register('ShowScrollBar', 3, () => 1);
   user32.register('EnableScrollBar', 3, () => 1);
 }

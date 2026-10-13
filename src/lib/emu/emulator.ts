@@ -1286,7 +1286,7 @@ export class Emulator {
       // A GetMessage inside a dispatched window procedure (e.g. a modal loop run from a
       // command handler) parks with that wndproc's frame pending, so "parked" means no
       // nesting beyond the pending async frames.
-      if (!this.isParkedAtSuspension(targetThread)) return;
+      if (!this.isParkedAtSuspension(targetThread)) { this._scheduleFlush(); return; }
       if (targetThread) targetThread._onMessageAvailable = null;
       else this._onMessageAvailable = null;
       // The resume callback completes the suspended GetMessage thunk against
@@ -1306,6 +1306,21 @@ export class Emulator {
 
   /** Fire a parked GetMessage resume if messages queued up while the thread
    *  was executing a nested callback. Called when the nesting unwinds. */
+  private _flushTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Retry delivering a message posted while the waiting thread was inside a nested
+   *  callback, in case no unwind path calls flushPendingMessage() for it. */
+  _scheduleFlush(attempt = 0): void {
+    if (this._flushTimer || attempt > 50) return;
+    this._flushTimer = setTimeout(() => {
+      this._flushTimer = null;
+      if (!this.running || this.halted || this.messageQueue.length === 0) return;
+      const t = this.currentThread;
+      if (!(t ? t._onMessageAvailable : this._onMessageAvailable)) return;
+      if (this.waitingForMessage && this.isParkedAtSuspension(t)) this.flushPendingMessage();
+      else this._scheduleFlush(attempt + 1);
+    }, attempt === 0 ? 0 : 16);
+  }
+
   flushPendingMessage(): void {
     const t = this.currentThread;
     const cb = t ? t._onMessageAvailable : null;
@@ -1440,7 +1455,7 @@ export class Emulator {
   setupCanvasSize(cw: number, ch: number): void { _setupCanvasSize(this, cw, ch); }
   getWindowDC(hwnd: number): number { return _getWindowDC(this, hwnd); }
   beginPaint(hwnd: number): number { return _beginPaint(this, hwnd); }
-  endPaint(hwnd: number, hdc: number): void { _endPaint(this, hwnd, hdc); }
+  endPaint(hwnd: number, _hdc: number): void { _endPaint(this, hwnd); }
   renderChildControls(hwnd: number): void { _renderChildControls(this, hwnd); }
   private _repaintingChildren = false;
   repaintChildWindows(hwnd: number): void {

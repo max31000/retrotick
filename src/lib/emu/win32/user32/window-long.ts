@@ -4,6 +4,9 @@ import { getClientSize } from './_helpers';
 
 export function registerWindowLong(emu: Emulator): void {
   const user32 = emu.registerDll('USER32.DLL');
+  // Built-in controls have no guest window procedure; expose the callable thunk so
+  // subclassing (SetWindowLong(GWL_WNDPROC) + CallWindowProc(old)) keeps native behavior.
+  const builtinProc = (): number => emu._builtinWndProcW || 0;
 
   user32.register('GetWindowLongA', 2, () => {
     const hwnd = emu.readArg(0);
@@ -14,7 +17,7 @@ export function registerWindowLong(emu: Emulator): void {
     if (index === -16) return wnd.style; // GWL_STYLE
     if (index === -20) return wnd.exStyle; // GWL_EXSTYLE
     if (index === -21) return wnd.userData; // GWL_USERDATA
-    if (index === -4) return wnd.wndProc; // GWL_WNDPROC
+    if (index === -4) return wnd.wndProc || builtinProc(); // GWL_WNDPROC
     if (index === -12) return wnd.controlId ?? 0; // GWL_ID
     if (index === -6) return wnd.classInfo?.hInstance ?? emu.pe?.imageBase ?? 0; // GWL_HINSTANCE
 
@@ -34,7 +37,11 @@ export function registerWindowLong(emu: Emulator): void {
     if (!wnd) return 0;
 
     let old = 0;
-    if (index === -4) { old = wnd.wndProc; wnd.wndProc = value; } // GWL_WNDPROC
+    if (index === -4) { // GWL_WNDPROC
+      old = wnd.wndProc || builtinProc();
+      // Restoring the built-in control procedure returns the window to native handling
+      wnd.wndProc = (value === emu._builtinWndProcA || value === emu._builtinWndProcW) ? 0 : value;
+    }
     else if (index === -16) {
       old = wnd.style; wnd.style = value;
       if (hwnd === emu.mainWindow) {
