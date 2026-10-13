@@ -113,6 +113,15 @@ export function tickUntilIdle(emu, maxTicks = 5000) {
   return ticks;
 }
 
+/** Let timers/queued messages run for roughly `ms` of wall time (yielding to the event loop). */
+export async function pump(emu, ms = 500) {
+  const end = Date.now() + ms;
+  while (Date.now() < end && !emu.halted) {
+    emu.tick();
+    await new Promise(r => setTimeout(r, 2));
+  }
+}
+
 /** Summarise warnings: missing API definitions, unimplemented APIs. */
 export function summarizeWarnings(warnings) {
   const noDef = [...new Set(warnings.filter(w => w.includes('No API definition')).map(w => w.replace(/.*No API definition for (\S+).*/, '$1')))];
@@ -125,6 +134,8 @@ export function summarizeWarnings(warnings) {
 export async function runMessageLoopTest(opts) {
   const { emu, warnings, restore } = await startExe(opts);
   const ticks = tickUntilIdle(emu, opts.maxTicks ?? 5000);
+  const reached = emu.waitingForMessage && !emu.halted;
+  if (reached) await pump(emu, opts.pumpMs ?? 500);
   restore();
   const s = summarizeWarnings(warnings);
   if (s.noDef.length) console.log(`[TEST] No API definition: ${s.noDef.join(', ')}`);
@@ -132,7 +143,7 @@ export async function runMessageLoopTest(opts) {
   for (const m of s.missingDlls) console.log(`[TEST] ${m}`);
   const mainWnd = emu.mainWindow ? emu.handles.get(emu.mainWindow) : null;
   console.log(`[TEST] ticks=${ticks} halted=${emu.halted} reason=${emu.haltReason || '-'} mainWindow=${mainWnd ? JSON.stringify(mainWnd.title) : 'none'}`);
-  const ok = emu.waitingForMessage && !emu.halted && s.noDef.length === 0;
+  const ok = reached && !emu.halted && s.noDef.length === 0;
   console.log(ok ? '[TEST] SUCCESS: Reached message loop' : '[TEST] FAIL');
   return { emu, ok, summary: s };
 }

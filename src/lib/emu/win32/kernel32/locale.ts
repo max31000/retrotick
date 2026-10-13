@@ -1,5 +1,8 @@
 import type { Emulator } from '../../emulator';
 import { loadSettings, getLocalePreset } from '../../../regional-settings';
+import { encodeMBCS } from '../../memory';
+import { buildLocaleInfo, localeInfoNumber } from './locale-info';
+import { LOCALE_RETURN_NUMBER } from '../types';
 
 export function registerLocale(emu: Emulator): void {
   const kernel32 = emu.registerDll('KERNEL32.DLL');
@@ -227,32 +230,8 @@ export function registerLocale(emu: Emulator): void {
     return n;
   });
 
-  function getLocaleDefaults(): Record<number, string> {
-    const preset = getLocalePreset(emu.configuredLcid);
-    return {
-      0x0001: '0',                      // LOCALE_ILANGUAGE
-      0x0002: preset.name,
-      0x000C: preset.listSep,
-      0x000D: preset.measure,
-      0x000E: preset.decimalSep,
-      0x000F: preset.thousandsSep,
-      0x0010: preset.grouping,
-      0x0011: preset.iDigits,
-      0x0012: preset.iLZero,
-      0x001D: preset.dateSep,
-      0x001E: preset.timeSep,
-      0x001F: preset.shortDate,
-      0x0020: preset.longDate,
-      0x0023: preset.iTime,
-      0x0025: preset.iTLZero,
-      0x0028: preset.am,
-      0x0029: preset.pm,
-      0x1003: preset.timeFormat,
-      0x1005: '0',                      // LOCALE_ITIMEMARKPOSN
-    };
-  }
+  const getLocaleDefaults = (): Record<number, string> => buildLocaleInfo(getLocalePreset(emu.configuredLcid));
 
-  const LOCALE_RETURN_NUMBER = 0x20000000;
 
   kernel32.register('GetLocaleInfoA', 4, () => {
     const _lcid = emu.readArg(0);
@@ -266,19 +245,19 @@ export function registerLocale(emu: Emulator): void {
     const str = defaults[key];
     if (lcType & LOCALE_RETURN_NUMBER) {
       // Return numeric value as DWORD
-      const val = parseInt(str, 10) || 0;
+      const val = localeInfoNumber(key, str);
       if (cchBuf === 0) return 4; // sizeof(DWORD)
       if (buf && cchBuf >= 4) emu.memory.writeU32(buf, val);
       return 4;
     }
-    if (cchBuf === 0) return str.length + 1;
+    const bytes = encodeMBCS(str);
+    if (cchBuf === 0) return bytes.length + 1;
     if (buf && cchBuf > 0) {
-      for (let i = 0; i < Math.min(str.length, cchBuf - 1); i++) {
-        emu.memory.writeU8(buf + i, str.charCodeAt(i) & 0xFF);
-      }
-      emu.memory.writeU8(buf + Math.min(str.length, cchBuf - 1), 0);
+      const n = Math.min(bytes.length, cchBuf - 1);
+      for (let i = 0; i < n; i++) emu.memory.writeU8(buf + i, bytes[i]);
+      emu.memory.writeU8(buf + n, 0);
     }
-    return Math.min(str.length + 1, cchBuf);
+    return Math.min(bytes.length + 1, cchBuf);
   });
   kernel32.register('GetLocaleInfoW', 4, () => {
     const _lcid = emu.readArg(0);
@@ -291,7 +270,7 @@ export function registerLocale(emu: Emulator): void {
     if (!hasKey) return 0; // unknown locale type
     const str = defaults[key];
     if (lcType & LOCALE_RETURN_NUMBER) {
-      const val = parseInt(str, 10) || 0;
+      const val = localeInfoNumber(key, str);
       if (cchBuf === 0) return 2; // sizeof(DWORD) in WCHARs
       if (buf && cchBuf >= 2) emu.memory.writeU32(buf, val);
       return 2;

@@ -5,6 +5,9 @@ import { loadNE } from './ne-loader';
 import { FlatMemory } from './x86/flat-memory';
 import type { LoadedNE } from './ne-loader';
 import { setAnsiCodePage, setAnsiCodePageFromCP, setAnsiEncoding, guessEncodingFromBytes } from './memory';
+import { getLocalePreset } from '../regional-settings';
+
+const WESTERN_ANSI_CODE_PAGE = 1252;
 import { registerGdi32 } from './win32/gdi32/index';
 import { registerKernel32 } from './win32/kernel32/index';
 import { registerUser32 } from './win32/user32/index';
@@ -213,6 +216,12 @@ export async function emuLoad(emu: Emulator, arrayBuffer: ArrayBuffer, peInfo: P
         }
       }
     }
+  }
+  // An explicitly configured non-Western system locale defines the system ANSI code page
+  // (GetACP), so string conversions must use it regardless of what the exe's resources suggest.
+  {
+    const systemAcp = getLocalePreset(emu.configuredLcid).ansiCodePage;
+    if (systemAcp !== WESTERN_ANSI_CODE_PAGE) setAnsiCodePageFromCP(systemAcp);
   }
   emu.cpu.emu = emu;
   emu.canvasCtx = canvas.getContext('2d')!;
