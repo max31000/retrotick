@@ -4,7 +4,7 @@ import type { Emulator } from '../../emulator';
 import type { DCInfo } from './types';
 import type { WindowInfo } from '../user32/types';
 import { Region, type Rect } from '../../region';
-import { getClientSize } from '../user32/_helpers';
+import { clientRect, clientOffsetInDC } from '../user32/update-region';
 import { getRegion, setRegion, readRect, writeRect } from './region';
 import {
   saveDC, restoreDC, setClipRegion, narrowClipRegion, effectiveClip, infiniteRegion,
@@ -16,9 +16,9 @@ export function dcSurface(emu: Emulator, dc: DCInfo): Rect {
   if (dc.hwnd) {
     const wnd = emu.handles.get<WindowInfo>(dc.hwnd);
     if (wnd) {
-      const isChild = !!(wnd.style & 0x40000000);
-      const { cw, ch } = getClientSize(wnd.style, !isChild && wnd.hMenu !== 0, wnd.width, wnd.height, emu.isNE);
-      return { left: 0, top: 0, right: cw, bottom: ch };
+      const c = clientRect(emu, wnd);
+      const off = clientOffsetInDC(emu, dc.hwnd, wnd);
+      return { left: c.left + off.x, top: c.top + off.y, right: c.right + off.x, bottom: c.bottom + off.y };
     }
   }
   return { left: 0, top: 0, right: dc.canvas.width, bottom: dc.canvas.height };

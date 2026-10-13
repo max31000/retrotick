@@ -7,9 +7,9 @@
 import type { Emulator } from '../../emulator';
 import type { WindowInfo } from './types';
 import { Region, type Rect } from '../../region';
-import { getClientSize } from './_helpers';
+import { getClientSize, getNonClientMetrics } from './_helpers';
+import { WS_CHILD } from '../types';
 
-const WS_CHILD = 0x40000000;
 
 type Tracked = WindowInfo & { _np?: boolean };
 
@@ -34,6 +34,19 @@ export function clientRect(emu: Emulator, wnd: WindowInfo): Rect {
   const isChild = !!(wnd.style & WS_CHILD);
   const { cw, ch } = getClientSize(wnd.style, !isChild && wnd.hMenu !== 0, wnd.width, wnd.height, emu.isNE);
   return { left: 0, top: 0, right: cw, bottom: ch };
+}
+
+/**
+ * Offset of the client area origin in the window's DC coordinates. The main window and
+ * windows with their own canvas have client-origin DCs; children and popups that share the
+ * main canvas get window-origin DCs (see getWindowDC), so their client area is inset by the
+ * non-client frame. Single source of truth for paint, scroll and clip coordinate mapping.
+ */
+export function clientOffsetInDC(emu: Emulator, hwnd: number, wnd: WindowInfo): { x: number; y: number } {
+  if (hwnd === emu.mainWindow || wnd.domCanvas) return { x: 0, y: 0 };
+  const isChild = !!(wnd.style & WS_CHILD);
+  const { bw, captionH, menuH } = getNonClientMetrics(wnd.style, !isChild && wnd.hMenu !== 0, emu.isNE);
+  return { x: bw, y: bw + captionH + menuH };
 }
 
 /** Current update region (client coordinates), or null when the window is valid. */

@@ -2,18 +2,15 @@
 // painting clipped to the update region, and invalidation of windows sharing the canvas.
 import type { Emulator } from './emulator';
 import type { WindowInfo } from './win32/user32/index';
-import { SYS_COLORS, COLOR_BTNFACE, WM_ERASEBKGND } from './win32/types';
+import { SYS_COLORS, COLOR_BTNFACE, WM_ERASEBKGND, WS_CLIPCHILDREN } from './win32/types';
 import { renderChildControls } from './emu-render';
 import { Region, type Rect } from './region';
-import { getUpdateRegion, validateWindow, clientRect, invalidateWindow } from './win32/user32/update-region';
+import { getUpdateRegion, validateWindow, clientRect, invalidateWindow, clientOffsetInDC } from './win32/user32/update-region';
 import { pushVisClip, popVisClip } from './win32/gdi32/dc-clip';
-import { getNonClientMetrics } from './win32/user32/_helpers';
 import { getWindowDC, getDC, releaseChildDC, getBrush, isDescendantOfMain } from './emu-window';
 
 // Track DCs that have WS_CLIPCHILDREN state saved
 const clipChildrenDCSet = new Set<number>();
-const WS_CLIPCHILDREN = 0x02000000;
-const WS_CHILD = 0x40000000;
 
 function applyClipChildren(emu: Emulator, hwnd: number, wnd: WindowInfo | null, hdc: number): void {
   if (!wnd || !(wnd.style & WS_CLIPCHILDREN) || !wnd.childList || hwnd !== emu.mainWindow) return;
@@ -69,13 +66,12 @@ export function sendEraseBackground(emu: Emulator, hwnd: number, wnd: WindowInfo
  *  top-left corner (not the client area), so map a client-coordinate region onto them.
  *  A whole-client update covers the whole window, borders included. */
 export function toDCCoords(emu: Emulator, hwnd: number, wnd: WindowInfo, rgn: Region): Region {
-  if (hwnd === emu.mainWindow || wnd.domCanvas) return rgn;
+  const off = clientOffsetInDC(emu, hwnd, wnd);
+  if (!off.x && !off.y && (hwnd === emu.mainWindow || wnd.domCanvas)) return rgn;
   const client = clientRect(emu, wnd);
   if (rgn.equals(new Region([client]))) return Region.fromRect(0, 0, wnd.width, wnd.height);
-  const isChild = !!(wnd.style & WS_CHILD);
-  const { bw, captionH, menuH } = getNonClientMetrics(wnd.style, !isChild && wnd.hMenu !== 0, emu.isNE);
   const r = rgn.clone();
-  r.offset(bw, bw + captionH + menuH);
+  r.offset(off.x, off.y);
   return r;
 }
 
@@ -119,11 +115,11 @@ export function endPaint(emu: Emulator, hwnd: number): void {
     if (dc) dc.ctx.restore();
     clipChildrenDCSet.delete(hdc);
   }
+  if (wnd) wnd.painting = false;
   if (hdc) releaseChildDC(emu, hdc);
 
   renderChildControls(emu, hwnd);
   const painted = wnd?.paintRect;
-  if (wnd) wnd.painting = false;
 
   // Popup windows share the main canvas: repaint those the main window painted over.
   if (hwnd === emu.mainWindow && painted) invalidateOverlappingPopups(emu, painted);

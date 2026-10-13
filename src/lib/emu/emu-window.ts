@@ -241,6 +241,10 @@ export { beginPaint, endPaint } from './emu-paint';
 export function releaseChildDC(emu: Emulator, hdc: number): void {
   if (childDCSet.has(hdc)) {
     const dc = getDC(emu, hdc);
+    // The cached DC is shared with BeginPaint: a ReleaseDC (or nested GetDC) while the
+    // window is painting must not discard the paint clip — EndPaint releases it.
+    const owner = dc ? emu.handles.get<WindowInfo>(dc.hwnd) : null;
+    if (owner?.painting) return;
     if (dc) {
       // Like Wine's reset_dc_state: pop ALL saves made via SaveDC on this DC,
       // then pop the one from getWindowDC (translate+clip).

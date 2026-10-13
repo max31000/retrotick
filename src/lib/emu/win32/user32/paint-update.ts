@@ -3,9 +3,9 @@
 // UpdateWindow, RedrawWindow, ScrollWindow/ScrollWindowEx/ScrollDC.
 import type { Emulator } from '../../emulator';
 import type { WindowInfo } from './types';
-import { WM_PAINT, SIZEOF_PAINTSTRUCT } from '../types';
+import { WM_PAINT, SIZEOF_PAINTSTRUCT, WS_CHILD, WS_CLIPCHILDREN } from '../types';
 import { Region, type Rect } from '../../region';
-import { getUpdateRegion, invalidateWindow, validateWindow, clientRect } from './update-region';
+import { getUpdateRegion, invalidateWindow, validateWindow, clientRect, clientOffsetInDC } from './update-region';
 import { getRegion, setRegion, readRect, writeRect } from '../gdi32/region';
 import { pushVisClip, popVisClip } from '../gdi32/dc-clip';
 import { sendEraseBackground, toDCCoords } from '../../emu-paint';
@@ -15,8 +15,6 @@ import {
   RDW_NOCHILDREN, RDW_UPDATENOW, RDW_ERASENOW, RDW_INTERNALPAINT, SW_SCROLLCHILDREN, SW_INVALIDATE, SW_ERASE,
 } from '../constants-ctl';
 
-const WS_CHILD = 0x40000000;
-const WS_CLIPCHILDREN = 0x02000000;
 
 /** Send WM_PAINT now if the window has an update region; validates windows whose
  *  handler does not (avoids WM_PAINT storms, like DefWindowProc would). */
@@ -56,25 +54,39 @@ function childrenOf(emu: Emulator, wnd: WindowInfo): [number, WindowInfo][] {
 }
 
 /** Invalidate/validate `wnd` and (optionally) its children; `rgn` in wnd client coords. */
-function redraw(emu: Emulator, hwnd: number, wnd: WindowInfo, rgn: Region | null, flags: number, depth = 0): void {
+function redraw(emu: Emulator, hwnd: number, wnd: WindowInfo, rgn: Region | null, flags: number): void {
+  invalidateTree(emu, wnd, rgn, flags, 0);
+  // Like Wine's update_now: erase/paint the window first, then its children
+  if (flags & (RDW_ERASENOW | RDW_UPDATENOW)) paintTreeNow(emu, hwnd, flags, !!(flags & RDW_NOCHILDREN), 0);
+}
+
+/** Erase/paint pending windows now, parent before children (UpdateWindow semantics). */
+function paintTreeNow(emu: Emulator, hwnd: number, flags: number, noChildren: boolean, depth: number): void {
+  const wnd = emu.handles.get<WindowInfo>(hwnd);
+  if (!wnd) return;
+  if (flags & RDW_UPDATENOW) updateWindowNow(emu, hwnd);
+  else if (flags & RDW_ERASENOW) eraseNow(emu, hwnd, wnd);
+  if (noChildren || depth >= 32) return;
+  for (const [ch] of childrenOf(emu, wnd)) paintTreeNow(emu, ch, flags, false, depth + 1);
+}
+
+function invalidateTree(emu: Emulator, wnd: WindowInfo, rgn: Region | null, flags: number, depth: number): void {
   if (flags & RDW_INVALIDATE) invalidateWindow(emu, wnd, rgn, !!(flags & RDW_ERASE));
   if (flags & RDW_INTERNALPAINT && !wnd.needsPaint) invalidateWindow(emu, wnd, null, false);
   if (flags & RDW_VALIDATE) validateWindow(emu, wnd, rgn);
   if (flags & RDW_NOERASE) wnd.needsErase = false;
   const recurse = (flags & RDW_ALLCHILDREN) || (!(flags & RDW_NOCHILDREN) && !(wnd.style & WS_CLIPCHILDREN));
   if (recurse && depth < 32) {
-    for (const [ch, c] of childrenOf(emu, wnd)) {
+    for (const [, c] of childrenOf(emu, wnd)) {
       let crgn: Region | null = null;
       if (rgn) {
         crgn = rgn.intersect(Region.fromRect(c.x, c.y, c.x + c.width, c.y + c.height));
         if (crgn.isEmpty()) continue;
         crgn.offset(-c.x, -c.y);
       }
-      redraw(emu, ch, c, crgn, flags, depth + 1);
+      invalidateTree(emu, c, crgn, flags, depth + 1);
     }
   }
-  if (flags & RDW_ERASENOW) eraseNow(emu, hwnd, wnd);
-  if (flags & RDW_UPDATENOW) updateWindowNow(emu, hwnd);
 }
 
 /** Copy pixels of `area` by (dx,dy) on a DC, limited to `clip`. Returns the exposed region. */
@@ -189,7 +201,8 @@ export function registerPaintUpdate(emu: Emulator): void {
   user32.register('UpdateWindow', 1, () => {
     const hwnd = emu.readArg(0);
     if (!wndOf(hwnd)) return 0;
-    updateWindowNow(emu, hwnd);
+    // UpdateWindow == RedrawWindow(RDW_UPDATENOW | RDW_ALLCHILDREN): window, then children
+    paintTreeNow(emu, hwnd, RDW_UPDATENOW, false, 0);
     return 1;
   });
 
@@ -214,7 +227,11 @@ export function registerPaintUpdate(emu: Emulator): void {
     const area = pScroll ? readRect(emu, pScroll) : client;
     const clip = pClip ? readRect(emu, pClip) : client;
     const hdc = emu.getWindowDC(hwnd);
-    const exposed = scrollPixels(emu, hdc, area, clip, dx, dy);
+    // area/clip are client coordinates; the DC may be window-relative
+    const off = clientOffsetInDC(emu, hwnd, wnd);
+    const sh = (r: Rect): Rect => ({ left: r.left + off.x, top: r.top + off.y, right: r.right + off.x, bottom: r.bottom + off.y });
+    const exposed = scrollPixels(emu, hdc, sh(area), sh(clip), dx, dy);
+    exposed.offset(-off.x, -off.y);
     emu.releaseChildDC(hdc);
     // The pending update region inside the scrolled area moves with the pixels
     const pending = getUpdateRegion(emu, wnd);
