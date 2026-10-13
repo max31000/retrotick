@@ -873,6 +873,8 @@ export class Emulator {
     info: DialogInfo;
     result: number;
     ended: boolean;
+    /** CreateDialog* window shown in the overlay; the app runs its own message loop */
+    modeless?: boolean;
   } | null = null;
   _dialogResolve: ((result: number) => void) | null = null;
   _dialogPumpTimer: ReturnType<typeof setInterval> | null = null;
@@ -950,9 +952,17 @@ export class Emulator {
         this.cpu.eip = savedEIP;
         this.cpu.reg[4] = savedESP;
         this.waitingForMessage = savedWaiting;
+        // Messages posted by the handler (e.g. MFC's EndModalLoop WM_NULL) must wake a parked GetMessage
+        this.flushPendingMessage();
       }
     }
 
+    if (ds.modeless) {
+      // The app decides when a modeless dialog goes away (EndDialog/ShowWindow/DestroyWindow).
+      // If it is still up, re-show it after the UI has dropped its overlay.
+      if (this.dialogState === ds) setTimeout(() => { if (this.dialogState === ds) this.onShowDialog?.(ds.info); }, 0);
+      return;
+    }
     // If the app's dlgProc called EndDialog during WM_COMMAND, ds.ended is true
     // but _endDialog hasn't been called yet (EndDialog only sets the flag).
     // If the dlgProc didn't call EndDialog, force it ourselves.
@@ -1273,7 +1283,10 @@ export class Emulator {
       // wndproc while GetMessage waits), completing the thunk now would
       // corrupt the nested state — leave the message queued and the callback
       // armed; flushPendingMessage() fires it when the nesting unwinds.
-      if ((targetThread?.wndProcDepth ?? this.wndProcDepth) > 0) return;
+      // A GetMessage inside a dispatched window procedure (e.g. a modal loop run from a
+      // command handler) parks with that wndproc's frame pending, so "parked" means no
+      // nesting beyond the pending async frames.
+      if (!this.isParkedAtSuspension(targetThread)) return;
       if (targetThread) targetThread._onMessageAvailable = null;
       else this._onMessageAvailable = null;
       // The resume callback completes the suspended GetMessage thunk against
@@ -1285,12 +1298,18 @@ export class Emulator {
     }
   }
 
+  /** True when the thread is at its suspension point rather than inside a JS-initiated nested call. */
+  isParkedAtSuspension(t: Thread | null | undefined): boolean {
+    if (!t) return this.wndProcDepth === 0;
+    return t.wndProcDepth <= t._wndProcFrames.length;
+  }
+
   /** Fire a parked GetMessage resume if messages queued up while the thread
    *  was executing a nested callback. Called when the nesting unwinds. */
   flushPendingMessage(): void {
     const t = this.currentThread;
     const cb = t ? t._onMessageAvailable : null;
-    if (cb && this.waitingForMessage && this.messageQueue.length > 0 && this.wndProcDepth === 0) {
+    if (cb && this.waitingForMessage && this.messageQueue.length > 0 && this.isParkedAtSuspension(t)) {
       if (t) t._onMessageAvailable = null;
       cb();
     }

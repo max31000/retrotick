@@ -7,8 +7,10 @@ import { emuCompleteThunk } from '../../emu-exec';
 import { renderChildControls } from '../../emu-render';
 import { IDCANCEL } from '../types';
 import { getNonClientMetrics } from './_helpers';
+import { buildDialogOverlays, isSecondaryTopLevelDialog, showModelessDialog, hideModelessDialog, fireDialogCbtCreate } from './modeless-dialog';
 
 const RT_DIALOG = 5;
+const WS_VISIBLE_DLG = 0x10000000;
 
 export function registerDialog(emu: Emulator): void {
   const user32 = emu.registerDll('USER32.DLL');
@@ -278,34 +280,7 @@ export function registerDialog(emu: Emulator): void {
     }));
 
     // Build ControlOverlay[] from live child windows (after WM_INITDIALOG may have modified them)
-    const overlays: ControlOverlay[] = [];
-    if (wnd.childList) {
-      for (const childHwnd of wnd.childList) {
-        const child = emu.handles.get<WindowInfo>(childHwnd);
-        if (!child || !child.visible) continue;
-        const overlay: ControlOverlay = {
-          controlId: child.controlId ?? 0,
-          childHwnd,
-          className: child.classInfo.className.toUpperCase(),
-          baseClassName: child.classInfo.baseClassName,
-          x: child.x, y: child.y, width: child.width, height: child.height,
-          style: child.style, exStyle: child.exStyle, title: child.title,
-          checked: child.checked ?? 0,
-          fontHeight: child.hFont ? (emu.handles.get<{ height: number }>(child.hFont)?.height ?? 0) : 0,
-          trackPos: child.trackPos ?? 0,
-          trackMin: child.trackMin ?? 0,
-          trackMax: child.trackMax ?? 100,
-        };
-        if (child.tabItems) overlay.tabItems = child.tabItems;
-        if (child.tabSelectedIndex !== undefined) overlay.tabSelectedIndex = child.tabSelectedIndex;
-        if (child.cbItems) overlay.cbItems = child.cbItems;
-        if (child.cbSelectedIndex !== undefined) overlay.cbSelectedIndex = child.cbSelectedIndex;
-        if (child.lbItems) overlay.lbItems = child.lbItems;
-        if (child.lbSelectedIndex !== undefined) overlay.lbSelectedIndex = child.lbSelectedIndex;
-        if (child.lbSelectedIndices) overlay.lbSelectedIndices = Array.from(child.lbSelectedIndices);
-        overlays.push(overlay);
-      }
-    }
+    const overlays: ControlOverlay[] = buildDialogOverlays(emu, wnd);
 
     // Push current dialog state onto stack if nesting
     if (emu.dialogState) {
@@ -527,7 +502,7 @@ export function registerDialog(emu: Emulator): void {
   user32.register('DialogBoxIndirectParamW', 5, () => dialogBoxIndirectParamImpl());
 
   // CreateDialogParam — creates a modeless dialog (calc.exe main window)
-  const createDialogParamImpl = (wide: boolean) => {
+  const createDialogParamImpl = (wide: boolean, indirect = false) => {
     const hInstance = emu.readArg(0);
     const templatePtr = emu.readArg(1);
     const hwndParent = emu.readArg(2);
@@ -536,7 +511,11 @@ export function registerDialog(emu: Emulator): void {
 
     let dlg: DialogTemplate | null = null;
     let templateDesc: string;
-    if (templatePtr < 0x10000) {
+    if (indirect) {
+      // CreateDialogIndirectParam: templatePtr points to an in-memory DLGTEMPLATE(EX)
+      templateDesc = `template@0x${templatePtr.toString(16)}`;
+      dlg = readDialogTemplateFromMemory(templatePtr);
+    } else if (templatePtr < 0x10000) {
       // Numeric resource ID
       templateDesc = `id=${templatePtr}`;
       dlg = findDialogTemplate(hInstance, templatePtr);
@@ -615,6 +594,7 @@ export function registerDialog(emu: Emulator): void {
       wnd.extraBytes[7] = (dlgProc >> 24) & 0xFF;
     }
     console.log(`[DLG] Created dialog hwnd=0x${hwnd.toString(16)} size=${width}x${height} title="${dlg.title}" wndProc=0x${wndProc.toString(16)} dlgProc=0x${dlgProc.toString(16)} class="${dlgClassName}"`);
+    fireDialogCbtCreate(emu, hwnd, wnd, hInstance);
 
     // Create child controls from parsed dialog items
     for (let i = 0; i < dlg.items.length; i++) {
@@ -716,9 +696,9 @@ export function registerDialog(emu: Emulator): void {
       emu.setupCanvasSize(clientW, clientH);
     }
 
-    // Send WM_INITDIALOG through wndProc (DefDlgProc or class wndProc)
-    if (wndProc) {
-      emu.callWndProc(wndProc, hwnd, 0x0110, hwndParent, lParam); // WM_INITDIALOG
+    // Send WM_INITDIALOG through the (possibly hook-subclassed) window procedure
+    if (wnd.wndProc) {
+      emu.callWndProc(wnd.wndProc, hwnd, 0x0110, hwndParent, lParam); // WM_INITDIALOG
     }
 
     // After WM_INITDIALOG, ensure the dialog is visible and painted
@@ -727,6 +707,9 @@ export function registerDialog(emu: Emulator): void {
       wnd.needsPaint = true;
       wnd.needsErase = true;
       emu.onWindowChange?.(wnd as WindowInfo);
+    } else if ((wnd.style & WS_VISIBLE_DLG) && emu.handles.get(hwnd) && isSecondaryTopLevelDialog(emu, hwnd, wnd)) {
+      wnd.visible = true;
+      showModelessDialog(emu, hwnd);
     }
 
     return hwnd;
@@ -738,7 +721,12 @@ export function registerDialog(emu: Emulator): void {
     const hwndDlg = emu.readArg(0);
     const nResult = emu.readArg(1);
     console.log(`[DLG] EndDialog hwnd=0x${hwndDlg.toString(16)} result=${nResult}`);
-    if (emu.dialogState && emu.dialogState.hwnd === hwndDlg) {
+    if (emu.dialogState?.modeless && emu.dialogState.hwnd === hwndDlg) {
+      // EndDialog on a CreateDialog* window only hides it
+      const w = emu.handles.get<WindowInfo>(hwndDlg);
+      if (w) w.visible = false;
+      hideModelessDialog(emu, hwndDlg);
+    } else if (emu.dialogState && emu.dialogState.hwnd === hwndDlg) {
       emu.dialogState.result = nResult;
       emu.dialogState.ended = true;
       // Resolve the DialogBoxParam promise (cleanup handled by _endDialog)
@@ -1184,7 +1172,7 @@ export function registerDialog(emu: Emulator): void {
 
   // CreateDialogIndirectParamW(hInstance, lpTemplate, hwndParent, lpDialogFunc, lParamInit) → HWND
   // Return 0 (fail gracefully) - modeless dialog
-  user32.register('CreateDialogIndirectParamW', 5, () => 0);
+  user32.register('CreateDialogIndirectParamW', 5, () => createDialogParamImpl(true, true));
 
   const findChildByControlId = (hwndDlg: number, controlId: number): WindowInfo | null => {
     const wnd = emu.handles.get<WindowInfo>(hwndDlg);
