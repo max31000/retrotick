@@ -1,5 +1,6 @@
 import type { ComponentChildren } from 'preact';
 import { disabledTextStyle } from './styles';
+import { useIsLuna } from './theme';
 
 interface CheckboxProps {
   children: ComponentChildren;
@@ -9,6 +10,17 @@ interface CheckboxProps {
 }
 
 export function Checkbox({ children, fontCSS, checked, disabled }: CheckboxProps) {
+  if (useIsLuna()) {
+    const cls = ['bliss-luna-check'];
+    if (checked) cls.push('bliss-luna-checked');
+    if (disabled) cls.push('bliss-luna-disabled');
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+        <span class={cls.join(' ')} />
+        <span class={disabled ? 'bliss-luna-label-disabled' : undefined} style={{ font: fontCSS }}>{children}</span>
+      </div>
+    );
+  }
   return (
     <div style={{ display: 'flex', alignItems: 'center', height: '100%', cursor: 'var(--win2k-cursor)' }}>
       <input

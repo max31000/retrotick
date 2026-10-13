@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from 'preact/hooks';
 import { disabledTextStyle } from './styles';
 import type { MenuResult, MenuItem } from '../../lib/pe/types';
 import { formatMnemonic } from '../../lib/format';
+import { useIsLuna } from './theme';
+import { LunaMenuDropdownBody, LunaMenuBarBody } from './luna/LunaMenu';
 
 export function MenuDropdown({ items, onCommand, onClose, isSubmenu, x, y }: {
   items: MenuItem[];
@@ -16,6 +18,7 @@ export function MenuDropdown({ items, onCommand, onClose, isSubmenu, x, y }: {
   const [flipX, setFlipX] = useState(false);
   const [flipY, setFlipY] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const luna = useIsLuna();
 
   useEffect(() => {
     const el = ref.current;
@@ -31,6 +34,23 @@ export function MenuDropdown({ items, onCommand, onClose, isSubmenu, x, y }: {
     : isSubmenu
       ? { ...(flipX ? { right: '100%' } : { left: '100%' }), ...(flipY ? { bottom: 0 } : { top: 0 }) }
       : { left: 0, ...(flipY ? { bottom: '100%' } : { top: '100%' }) };
+
+  if (luna) {
+    return (
+      <LunaMenuDropdownBody
+        divRef={ref}
+        items={items}
+        posStyle={{ position: hasAbsPos ? 'fixed' : 'absolute', ...posStyle }}
+        hoverIdx={hoverIdx}
+        openSub={openSub}
+        setHoverIdx={setHoverIdx}
+        setOpenSub={setOpenSub}
+        onCommand={onCommand}
+        onClose={onClose}
+        renderSub={(sub) => <MenuDropdown items={sub} onCommand={onCommand} onClose={onClose} isSubmenu />}
+      />
+    );
+  }
 
   return (
     <div
@@ -104,6 +124,7 @@ export function MenuDropdown({ items, onCommand, onClose, isSubmenu, x, y }: {
 
 export function MenuBar({ menus, onCommand, onFocus, onMenuOpen }: { menus: MenuResult[]; onCommand: (id: number) => void; onFocus?: () => void; onMenuOpen?: (index: number) => void }) {
   const [openIdx, setOpenIdx] = useState<number | null>(null);
+  const luna = useIsLuna();
 
   useEffect(() => {
     if (openIdx === null) return;
@@ -114,6 +135,19 @@ export function MenuBar({ menus, onCommand, onFocus, onMenuOpen }: { menus: Menu
 
   if (menus.length === 0) return null;
   const menu = menus[0].menu;
+  if (luna) {
+    return (
+      <LunaMenuBarBody
+        items={menu.items}
+        openIdx={openIdx}
+        setOpenIdx={setOpenIdx}
+        onCommand={onCommand}
+        onFocus={onFocus}
+        onMenuOpen={onMenuOpen}
+        renderDropdown={(sub) => <MenuDropdown items={sub} onCommand={onCommand} onClose={() => setOpenIdx(null)} />}
+      />
+    );
+  }
 
   return (
     <div

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'preact/hooks';
 import { useLayoutEffect } from 'preact/hooks';
 import { Window, WS_CAPTION, WS_SYSMENU } from './Window';
 import { Button } from './Button';
+import { useUiTheme, useUiStrings, themeFaceColor } from './theme';
 
 const FONT = '11px/1 "Tahoma","MS Sans Serif",sans-serif';
 
@@ -19,6 +20,11 @@ export function AboutDialog({ caption, extraInfo, otherText, onDismiss, focused 
   const [initialPos, setInitialPos] = useState<{ x: number; y: number } | undefined>(undefined);
   const [visible, setVisible] = useState(false);
   const measureRef = useRef<HTMLDivElement>(null);
+  const theme = useUiTheme();
+  const strings = useUiStrings();
+  const luna = theme.name === 'luna';
+  const title = theme.aboutTitle ? theme.aboutTitle.replace('{0}', caption) : `About ${caption}`;
+  const memoryText = theme.aboutMemory ?? 'Physical memory available to Windows: {0} KB';
 
   useLayoutEffect(() => {
     if (!measureRef.current) return;
@@ -35,11 +41,11 @@ export function AboutDialog({ caption, extraInfo, otherText, onDismiss, focused 
 
   return (
     <div ref={measureRef} style={{ visibility: visible ? 'visible' : 'hidden', position: 'absolute', font: FONT }}>
-      <Window title={`About ${caption}`} style={WS_CAPTION | WS_SYSMENU} focused={focused} flashTrigger={flashTrigger} draggable initialPos={initialPos} onClose={onDismiss}>
-        <div style={{ background: '#D4D0C8', width: '340px' }}>
+      <Window title={title} style={WS_CAPTION | WS_SYSMENU} focused={focused} flashTrigger={flashTrigger} draggable isDialog className="bliss-luna-about" initialPos={initialPos} onClose={onDismiss}>
+        <div style={{ background: themeFaceColor(theme), width: '340px' }}>
           {/* Header band — Windows 2000 style blue banner */}
           <div style={{
-            background: 'linear-gradient(to right, #000080, #1084D0)',
+            background: luna ? 'linear-gradient(to right, #0039B7, #3D8BFF)' : 'linear-gradient(to right, #000080, #1084D0)',
             color: '#FFF', padding: '12px 14px', display: 'flex', alignItems: 'flex-end', gap: '10px',
           }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -55,15 +61,15 @@ export function AboutDialog({ caption, extraInfo, otherText, onDismiss, focused 
               <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginBottom: '6px', lineHeight: '1.4' }}>{otherText}</div>
             )}
             {/* System info line — Win2K style */}
-            <div style={{ borderTop: '1px solid #808080', borderBottom: '1px solid #FFF', margin: '6px 0' }} />
+            <div style={{ borderTop: luna ? '1px solid #ACA899' : '1px solid #808080', borderBottom: '1px solid #FFF', margin: '6px 0' }} />
             <div style={{ fontSize: '11px', color: '#444', lineHeight: '1.4' }}>
-              {'deviceMemory' in navigator && `Physical memory available to Windows: ${(navigator as Navigator & { deviceMemory: number }).deviceMemory * 1024 * 1024} KB`}
+              {'deviceMemory' in navigator && memoryText.replace('{0}', String((navigator as Navigator & { deviceMemory: number }).deviceMemory * 1024 * 1024))}
             </div>
           </div>
           {/* OK button */}
           <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '6px 14px 10px' }}>
             <div style={{ width: '75px', height: '23px', cursor: 'var(--win2k-cursor)' }} onClick={onDismiss}>
-              <Button fontCSS={FONT} isDefault>OK</Button>
+              <Button fontCSS={FONT} isDefault>{strings.ok}</Button>
             </div>
           </div>
         </div>

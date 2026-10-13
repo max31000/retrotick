@@ -1,6 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 import { disabledTextStyle } from './styles';
+import { useIsLuna } from './theme';
 
 interface ButtonProps {
   children: ComponentChildren;
@@ -13,6 +14,26 @@ interface ButtonProps {
 export function Button({ children, fontCSS, isDefault, disabled, fontColor }: ButtonProps) {
   const [pressed, setPressed] = useState(false);
   const active = pressed && !disabled;
+  const luna = useIsLuna();
+  if (luna) {
+    const cls = ['bliss-luna-button'];
+    if (isDefault) cls.push('bliss-luna-default');
+    if (active) cls.push('bliss-luna-pressed');
+    if (disabled) cls.push('bliss-luna-disabled');
+    return (
+      <button
+        type="button"
+        tabIndex={-1}
+        class={cls.join(' ')}
+        onPointerDown={() => setPressed(true)}
+        onPointerUp={() => setPressed(false)}
+        onPointerLeave={() => setPressed(false)}
+        style={{ font: fontCSS, ...(fontColor && !disabled ? { color: fontColor } : {}) }}
+      >
+        <span style={active ? { position: 'relative', left: '1px', top: '1px' } : undefined}>{children}</span>
+      </button>
+    );
+  }
   return (
     <button
       onPointerDown={() => setPressed(true)}
