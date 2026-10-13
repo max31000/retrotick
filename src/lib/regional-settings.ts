@@ -175,6 +175,7 @@ const jcukenRuCharMap = buildCharToVK([
   ['4', 0x34, false], ['5', 0x35, false], ['6', 0x36, false], ['7', 0x37, false],
   ['8', 0x38, false], ['9', 0x39, false],
   ['.', VK_OEM_2, false], [',', VK_OEM_2, true], ['-', VK_OEM_MINUS, false], ['=', VK_OEM_PLUS, false],
+  ['_', VK_OEM_MINUS, true], ['+', VK_OEM_PLUS, true], ['\\', VK_OEM_5, false], ['/', VK_OEM_5, true],
   ['!', 0x31, true], ['"', 0x32, true], ['№', 0x33, true], [';', 0x34, true], ['%', 0x35, true],
   [':', 0x36, true], ['?', 0x37, true], ['*', 0x38, true], ['(', 0x39, true], [')', 0x30, true],
   [' ', 0x20, false],

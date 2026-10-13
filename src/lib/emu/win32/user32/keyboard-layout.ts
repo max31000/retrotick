@@ -10,6 +10,8 @@ const MAPVK_VSC_TO_VK = 1;
 const MAPVK_VK_TO_CHAR = 2;
 const VK_SHIFT = 0x10;
 const VK_CAPITAL = 0x14;
+const VK_CONTROL = 0x11;
+const VK_MENU = 0x12;
 const KEY_DOWN = 0x80;
 const KEY_TOGGLED = 0x01;
 const SHIFT_STATE = 0x0100;
@@ -36,9 +38,14 @@ export function registerKeyboardLayout(emu: Emulator): void {
   user32.register('VkKeyScanExW', 2, () => vkScan(String.fromCharCode(emu.readArg(0) & 0xFFFF)));
 
   /** Character produced by vk with the given key state array (256 bytes), or '' */
-  const charFor = (vk: number, keyState: number): string => {
-    const shift = keyState ? !!(emu.memory.readU8(keyState + VK_SHIFT) & KEY_DOWN) : emu.keyStates.has(VK_SHIFT);
-    const caps = keyState ? !!(emu.memory.readU8(keyState + VK_CAPITAL) & KEY_TOGGLED) : false;
+  const charFor = (vk: number, keyState: number, unshifted = false): string => {
+    const ks = emu.msgKeyState ?? emu.keyStates;
+    const shift = unshifted ? false : keyState ? !!(emu.memory.readU8(keyState + VK_SHIFT) & KEY_DOWN) : ks.has(VK_SHIFT);
+    const caps = !unshifted && keyState ? !!(emu.memory.readU8(keyState + VK_CAPITAL) & KEY_TOGGLED) : false;
+    const ctrl = !unshifted && keyState ? !!(emu.memory.readU8(keyState + VK_CONTROL) & KEY_DOWN) : false;
+    const alt = !unshifted && keyState ? !!(emu.memory.readU8(keyState + VK_MENU) & KEY_DOWN) : false;
+    // Ctrl+letter produces the control character (Ctrl+A = 0x01), Ctrl+Alt (AltGr) aside
+    if (ctrl && !alt && vk >= 0x41 && vk <= 0x5A) return String.fromCharCode(vk - 0x40);
     let best = '';
     for (const [ch, info] of layout().charToVK) {
       if (info.vk !== vk) continue;
@@ -78,7 +85,7 @@ export function registerKeyboardLayout(emu: Emulator): void {
   const mapVk = (wide: boolean) => () => {
     const code = emu.readArg(0), type = emu.readArg(1);
     if (type === MAPVK_VK_TO_CHAR) {
-      const ch = charFor(code, 0);
+      const ch = charFor(code, 0, true);
       if (!ch) return 0;
       const up = ch.toUpperCase();
       return wide ? up.charCodeAt(0) : (encodeMBCS(up)[0] ?? 0);

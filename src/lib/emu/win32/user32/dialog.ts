@@ -7,7 +7,7 @@ import { emuFindResourceEntryForModule } from '../../emu-load';
 import { emuCompleteThunk } from '../../emu-exec';
 import { renderChildControls } from '../../emu-render';
 import { IDCANCEL } from '../types';
-import { getNonClientMetrics } from './_helpers';
+import { getNonClientMetrics, isCharMessage, convertCharParam } from './_helpers';
 import { buildDialogOverlays, isSecondaryTopLevelDialog, showModelessDialog, hideModelessDialog, fireDialogCbtCreate } from './modeless-dialog';
 
 const RT_DIALOG = 5;
@@ -375,7 +375,11 @@ export function registerDialog(emu: Emulator): void {
         // A modal loop dispatches every thread message to its own window procedure
         const target = emu.handles.get<WindowInfo>(msg.hwnd);
         const proc = target && target.wndProc && msg.hwnd !== ds.hwnd ? target.wndProc : dlgWnd.wndProc;
-        const ret = emu.callWndProc(proc, msg.hwnd, msg.message, msg.wParam, msg.lParam);
+        // Same delivery rules as GetMessage + DispatchMessage: key state of the message,
+        // character messages in the receiving window's character set.
+        if (msg.keyState) emu.msgKeyState = msg.keyState;
+        const wParam = isCharMessage(msg.message) ? convertCharParam(msg.wParam, true, !!(target ?? dlgWnd).unicode) : msg.wParam;
+        const ret = emu.callWndProc(proc, msg.hwnd, msg.message, wParam, msg.lParam);
         emu.cpu.eip = eipSave;
         emu.cpu.reg[4] = espSave;
         if (ds.ended) {

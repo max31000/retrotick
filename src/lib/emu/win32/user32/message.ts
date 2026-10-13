@@ -330,14 +330,17 @@ export function registerMessage(emu: Emulator): void {
   };
   user32.register('DispatchMessageA', 1, dispatchMessageImpl(false));
 
-  user32.register('PostMessageA', 4, () => {
+  // Queued character messages are stored as UTF-16; PostMessageA's are ANSI.
+  const postMessageImpl = (wide: boolean) => (): number => {
     const hwnd = emu.readArg(0);
     const message = emu.readArg(1);
-    const wParam = emu.readArg(2);
+    let wParam = emu.readArg(2);
     const lParam = emu.readArg(3);
+    if (isCharMessage(message)) wParam = convertCharParam(wParam, wide, true);
     emu.postMessage(hwnd, message, wParam, lParam);
     return 1;
-  });
+  };
+  user32.register('PostMessageA', 4, postMessageImpl(false));
 
   const WM_MDICREATE = 0x0220;
   const WM_MDIDESTROY = 0x0221;
@@ -2024,7 +2027,7 @@ export function registerMessage(emu: Emulator): void {
   user32.register('GetMessageW', 4, getMessageImpl(true));
   user32.register('PeekMessageW', 5, peekMessageImpl(true));
   user32.register('DispatchMessageW', 1, dispatchMessageImpl(true));
-  user32.register('PostMessageW', 4, emu.apiDefs.get('USER32.DLL:PostMessageA')?.handler!);
+  user32.register('PostMessageW', 4, postMessageImpl(true));
 
   user32.register('PostThreadMessageW', 4, () => 1); // pretend success
 

@@ -1280,8 +1280,9 @@ export class Emulator {
         return;
       }
     }
-    // Input messages carry the keyboard state at the time they were generated
-    const isInput = (message >= 0x0100 && message <= 0x0109) || (message >= 0x0200 && message <= 0x020E);
+    // Keyboard and mouse-button messages carry the keyboard state at the time they were
+    // generated (not WM_MOUSEMOVE: high-rate, and it never changes the key state)
+    const isInput = (message >= 0x0100 && message <= 0x0109) || (message > 0x0200 && message <= 0x020E);
     queue.push(isInput ? { hwnd, message, wParam, lParam, keyState: new Set(this.keyStates) } : { hwnd, message, wParam, lParam });
     if (onAvail) {
       // Only resume immediately when the target thread is parked at its
