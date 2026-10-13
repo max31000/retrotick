@@ -18,11 +18,10 @@ import { EmulatorDialog } from './EmulatorDialog';
 import { EXE_ICON_16 } from './DesktopIcon';
 import { FindDialog, FindReplaceDialog } from './FindDialog';
 import { FileDialog } from './win2k/FileDialog';
-import { listFileMetadata, getFile, addFile, deleteFile, dispatchDesktopFilesChanged, type DesktopFilesChangedDetail } from '../lib/file-store';
+import { listFileMetadata, dispatchDesktopFilesChanged, type DesktopFilesChangedDetail } from '../lib/file-store';
+import { desktopStorage, type EmulatorStorage } from '../lib/emulator-storage';
 import { RegistryStore } from '../lib/registry-store';
-import { loadRegistry, saveRegistry } from '../lib/registry-db';
 import { ProfileStore } from '../lib/profile-store';
-import { loadProfiles, saveProfiles } from '../lib/profile-db';
 import { detectPELanguageId, langToHtmlLang } from '../lib/lang';
 import { loadSettings, getKeyboardLayout, t } from '../lib/regional-settings';
 import { loadDosSettings } from '../lib/dos-settings';
@@ -48,6 +47,14 @@ interface EmulatorViewProps {
   zIndex?: number;
   focused?: boolean;
   minimized?: boolean;
+  /** Locale of the emulated system (default: regional settings) */
+  lcid?: number;
+  /** Emulated screen size (default: browser window) */
+  screenSize?: { width: number; height: number };
+  /** Persistence backend for registry, INI profiles and D: files (default: desktop IndexedDB store) */
+  storage?: EmulatorStorage;
+  /** Embedded mode: the window is laid out in normal flow (the host positions it), cannot be moved, resized or maximized, and missing-DLL notices are logged instead of shown */
+  embedded?: boolean;
 }
 
 function buildMKFlags(e: PointerEvent): number {
@@ -378,7 +385,8 @@ function renderMdiChildOverlay(
 
 // --- Main EmulatorView ---
 
-export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, commandLine, onStop, onFocus, onReady, onRunExe, onOpenHelp, onSetupEmulator, audioContext: sharedAudioContext, onTitleChange, onIconChange, onMinimize, onRegisterCloseHandler, processRegistry, zIndex = 100, focused = true, minimized: minimizedProp }: EmulatorViewProps) {
+export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, commandLine, onStop, onFocus, onReady, onRunExe, onOpenHelp, onSetupEmulator, audioContext: sharedAudioContext, onTitleChange, onIconChange, onMinimize, onRegisterCloseHandler, processRegistry, zIndex = 100, focused = true, minimized: minimizedProp, lcid, screenSize, storage, embedded = false }: EmulatorViewProps) {
+  const store = storage ?? desktopStorage;
   const exeBaseName = exeName.split(/[/\\]/).pop() || exeName;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const emuRef = useRef<Emulator | null>(null);
@@ -491,14 +499,14 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
 
     const canvas = canvasRef.current;
     const emu = new Emulator();
-    emu.configuredLcid = loadSettings().localeId;
+    emu.configuredLcid = lcid ?? loadSettings().localeId;
 
     // Populate the emulator's virtualFiles metadata list from IndexedDB.
     // Only names + sizes are read — the data cache fills lazily via
     // FileManager.fetchFileData on first access, so launching an EXE no longer
     // pays the structured-clone cost of every other stored binary.
     const syncVirtualFiles = async (e: Emulator) => {
-      const metas = await listFileMetadata();
+      const metas = await store.listFiles();
       e.fs.virtualFiles = metas.map(m => ({ name: m.name, size: m.size }));
     };
     // Targeted update of virtualFiles + virtualFileCache from a
@@ -535,7 +543,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
       const detail = (ev as CustomEvent<DesktopFilesChangedDetail>).detail ?? null;
       applyChange(detail);
     };
-    window.addEventListener('desktop-files-changed', onDesktopChanged);
+    if (!storage) window.addEventListener('desktop-files-changed', onDesktopChanged);
 
     // Async init for registry + profiles, then start emulator
     let regFlushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -543,8 +551,8 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
     const initAndRun = async () => {
       // Load registry, profiles, and virtual filesystem in parallel (independent IndexedDB reads)
       const [regData, profData] = await Promise.all([
-        loadRegistry().catch(e => { console.warn('[REG] Failed to load registry from IndexedDB:', e); return null; }),
-        loadProfiles().catch(e => { console.warn('[PROF] Failed to load profiles from IndexedDB:', e); return null; }),
+        store.loadRegistry().catch(e => { console.warn('[REG] Failed to load registry from IndexedDB:', e); return null; }),
+        store.loadProfiles().catch(e => { console.warn('[PROF] Failed to load profiles from IndexedDB:', e); return null; }),
         syncVirtualFiles(emu),
       ]);
 
@@ -554,7 +562,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
       regStore.onChange = () => {
         if (regFlushTimer !== null) clearTimeout(regFlushTimer);
         regFlushTimer = setTimeout(() => {
-          saveRegistry(regStore.serialize()).catch(e =>
+          store.saveRegistry(regStore.serialize()).catch(e =>
             console.warn('[REG] Failed to save registry:', e)
           );
         }, 500);
@@ -567,7 +575,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
       profStore.onChange = () => {
         if (profFlushTimer !== null) clearTimeout(profFlushTimer);
         profFlushTimer = setTimeout(() => {
-          saveProfiles(profStore.serialize()).catch(e =>
+          store.saveProfiles(profStore.serialize()).catch(e =>
             console.warn('[PROF] Failed to save profiles:', e)
           );
         }, 500);
@@ -619,21 +627,21 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
         emu.processRegistry = processRegistry;
         processRegistry.register(emu, exeName);
       }
-      emu.screenWidth = window.innerWidth;
-      emu.screenHeight = window.innerHeight;
+      emu.screenWidth = screenSize?.width ?? window.innerWidth;
+      emu.screenHeight = screenSize?.height ?? window.innerHeight;
 
       // Wire up async file I/O to IndexedDB via FileManager (before load() so
       // NE DLL loading can fetch DLLs from PATH directories in IndexedDB)
-      emu.fs.onFileRequest = (fileName: string) => getFile(fileName);
+      emu.fs.onFileRequest = (fileName: string) => store.getFile(fileName);
       emu.fs.onFileSave = (fileName: string, data: ArrayBuffer) => {
-        addFile(fileName, data).then(() =>
-          dispatchDesktopFilesChanged({ source: 'guest', added: [fileName] })
-        );
+        store.addFile(fileName, data).then(() => {
+          if (!storage) dispatchDesktopFilesChanged({ source: 'guest', added: [fileName] });
+        });
       };
       emu.fs.onFileDelete = (fileName: string) => {
-        deleteFile(fileName).then(() =>
-          dispatchDesktopFilesChanged({ source: 'guest', deleted: [fileName] })
-        );
+        store.deleteFile(fileName).then(() => {
+          if (!storage) dispatchDesktopFilesChanged({ source: 'guest', deleted: [fileName] });
+        });
       };
 
       // Wire up browser download for Z:\ file save
@@ -672,7 +680,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
         setHasMainWindow(true);
         setWindowTitle(wnd.title);
         onTitleChange?.(wnd.title);
-        setWindowStyle(wnd.style);
+        setWindowStyle(embedded ? wnd.style & ~WS_MAXIMIZEBOX : wnd.style);
         setMinimized(!!wnd.minimized);
         setMaximized(!!wnd.maximized);
         // Use emulated window position only for initial mainWindow placement (cascade),
@@ -710,6 +718,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
       let initialLoadDone = false;
       emu.onMissingDll = (dllName: string) => {
         if (!initialLoadDone) return; // will be listed in the post-run batch
+        if (embedded) { console.warn(`[EMU] Missing DLL: ${dllName}`); return; }
         const s = t();
         setMessageBoxes(prev => [...prev, {
           id: Date.now(),
@@ -769,7 +778,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
 
         // Create child emulator in-process
         const childEmu = new Emulator();
-        childEmu.configuredLcid = loadSettings().localeId;
+        childEmu.configuredLcid = emu.configuredLcid;
         for (const [name, data] of emu.additionalFiles) {
           childEmu.additionalFiles.set(name, data);
         }
@@ -897,7 +906,9 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
 
         emu.run();
         initialLoadDone = true;
-        if (emu.missingDlls.length > 0) {
+        if (emu.missingDlls.length > 0 && embedded) {
+          console.warn(`[EMU] Missing DLLs: ${emu.missingDlls.join(', ')}`);
+        } else if (emu.missingDlls.length > 0) {
           const s = t();
           const dlls = emu.missingDlls.join(', ');
           setMessageBoxes(prev => [...prev, {
@@ -913,7 +924,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
     }
 
     return () => {
-      window.removeEventListener('desktop-files-changed', onDesktopChanged);
+      if (!storage) window.removeEventListener('desktop-files-changed', onDesktopChanged);
       if (regFlushTimer !== null) clearTimeout(regFlushTimer);
       if (emuRef.current) {
         if (processRegistry && emuRef.current.pid) {
@@ -1402,12 +1413,12 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
 
   const handleMinimize = useCallback(() => {
     const emu = emuRef.current;
-    if (emu?.mainWindow) {
+    if (emu?.mainWindow && !embedded) {
       emu.postMessage(emu.mainWindow, WM_SYSCOMMAND, SC_MINIMIZE, 0);
     }
     // Don't set minimized on the window — let the taskbar handle hiding via minimizedProp
     onMinimize?.();
-  }, [onMinimize]);
+  }, [onMinimize, embedded]);
 
   const handleMaximize = useCallback(() => {
     const emu = emuRef.current;
@@ -1625,7 +1636,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
   void consoleLayoutBump; // dependency: re-evaluate when the layout changes
 
   return (
-    <div ref={desktopRef} style={{ position: 'absolute', left: `${windowPos.x}px`, top: `${windowPos.y}px`, zIndex, visibility: windowReady ? 'visible' : 'hidden', display: minimizedProp ? 'none' : undefined, touchAction: 'none' }} onPointerDown={onFocus}>
+    <div ref={desktopRef} style={{ ...(embedded ? { position: 'relative', display: 'inline-block' } : { position: 'absolute', left: `${windowPos.x}px`, top: `${windowPos.y}px` }), zIndex, visibility: windowReady ? 'visible' : 'hidden', display: minimizedProp ? 'none' : undefined, touchAction: 'none' }} onPointerDown={onFocus}>
       <Window
         title={windowTitle}
         style={windowStyle}
@@ -1634,7 +1645,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
         iconUrl={iconUrl}
         iconElement={!iconUrl ? EXE_ICON_16 : undefined}
         focused={parentFocused}
-        maximized={maximized}
+        maximized={embedded ? false : maximized}
         minimized={false}
         blocked={hasModalDialog}
         onBlockedClick={flashModal}
@@ -1648,18 +1659,18 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
           }
         }}
         onMinimize={handleMinimize}
-        onMaximize={handleMaximize}
-        onTitleBarMouseDown={onTitleBarMouseDown}
+        onMaximize={embedded ? undefined : handleMaximize}
+        onTitleBarMouseDown={embedded ? undefined : onTitleBarMouseDown}
         onTitleBarDblClick={handleTitleBarDblClick}
-        onResizeStart={onResizeStart}
+        onResizeStart={embedded ? undefined : onResizeStart}
         onZoomToggle={isConsole ? () => setConsoleZoom(z => z === 1 ? 2 : 1) : undefined}
         zoomActive={consoleZoom > 1}
         onSmoothToggle={isConsole ? () => setConsoleSmooth(s => !s) : undefined}
         smoothActive={consoleSmooth}
         onFullscreenToggle={isConsole ? handleFullscreenToggle : undefined}
         fullscreenActive={isFullscreen}
-        onSystemMove={handleSystemMove}
-        onSystemSize={handleSystemSize}
+        onSystemMove={embedded ? undefined : handleSystemMove}
+        onSystemSize={embedded ? undefined : handleSystemSize}
         lang={detectedLang}
       >
         <div
