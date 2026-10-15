@@ -1,5 +1,7 @@
 // Exploration: log every host-hook event while running a scripted sequence.
-// EXE=freecell.exe STEPS="cmd:102 wait:800 cmd:114 wait:500" npx tsx tests/tmp-explore-hooks.mjs
+// BLISS_ASSETS=<dir> EXE=freecell.exe STEPS="cmd:102 wait:800 mb:3 cmd:114 wait:500" npx tsx tests/explore-xp-hooks.mjs
+// Steps: cmd:<id> (WM_COMMAND), mb:<result> (answer next message box), key:<vk>, click:x,y, dbl:x,y,
+// wait:<ms>, peek:<addr>,<n>. PRESS='{"<template>":<button>}' answers dialogs; PRESET_REG="subkey|name|dword" (HKCU).
 import { resolveAssetsDir, startExe, tickUntilIdle, pump } from './lib/headless-harness.mjs';
 import { RegistryStore } from '../src/lib/registry-store.ts';
 const dir = resolveAssetsDir();
@@ -7,7 +9,6 @@ const exe = process.env.EXE;
 const out = (s) => process.stdout.write(s + '\n');
 let phase = 'init';
 const mbAnswers = [];
-let lastText = '';
 const textSeen = new Set();
 const hooks = {
   dialogCreate: (d) => { out(`[${phase}] dialogCreate ${JSON.stringify(d)}`); },
