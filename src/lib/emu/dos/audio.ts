@@ -25,6 +25,7 @@ export class DosAudio {
   readonly sbDsp: SoundBlasterDSP;
   readonly dma = new DMAController();
   private ctx: AudioContext | null = null;
+  private output: AudioNode | null = null;
   private workletNode: AudioWorkletNode | null = null;
   private started = false;
   /** Shared ring buffer for passing interleaved stereo samples to the AudioWorklet. */
@@ -66,14 +67,15 @@ export class DosAudio {
   }
 
   /** Initialize audio (must be called from user gesture). */
-  init(audioContext: AudioContext): void {
+  init(audioContext: AudioContext, output: AudioNode = audioContext.destination): void {
     if (this.started) return;
     this.ctx = audioContext;
+    this.output = output;
     this.started = true;
 
     this.opl2.setSampleRate(audioContext.sampleRate);
     this.opl2.onTimerIRQ = () => this.onSBIRQ();
-    this.speaker = new PCSpeaker(audioContext);
+    this.speaker = new PCSpeaker(audioContext, output);
     this.speaker.initGuitar(); // fire-and-forget; falls back to square if unavailable
     this.gus.outputRate = audioContext.sampleRate;
 
@@ -149,7 +151,7 @@ if (!globalThis._oplRegistered) {
         outputChannelCount: [2],
         processorOptions: { sharedBuffer: ringBuf },
       });
-      node.connect(this.ctx.destination);
+      node.connect(this.output ?? this.ctx.destination);
       this.workletNode = node;
 
       // Use setInterval so audio generates even when the tab is in the background.

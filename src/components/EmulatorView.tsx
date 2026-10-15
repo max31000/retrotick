@@ -903,7 +903,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
         // Assign shared AudioContext — created in App during user gesture
         if (sharedAudioContext) {
           emu.audioContext = sharedAudioContext;
-          if (emu.isDOS) emu.dosAudio.init(sharedAudioContext);
+          if (emu.isDOS) emu.dosAudio.init(sharedAudioContext, emu.audioOutput);
         }
 
         // Console app detection (must be after load() which sets isDOS/isConsole)
@@ -1224,6 +1224,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
     // Block mouse events while a modal dialog/MessageBox is showing
     if (emu.messageBoxes.length > 0) return null;
     if (emu.dialogState) return null;
+    if (emu.inputBlocked) return null; // host modal window above the program
     // Resume AudioContext if suspended (user gesture)
     if (emu.audioContext?.state === 'suspended') emu.audioContext.resume();
 
@@ -1345,7 +1346,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       const emu = emuRef.current;
-      if (!emu || !emu.mainWindow) return;
+      if (!emu || !emu.mainWindow || emu.inputBlocked) return;
       // Don't intercept browser shortcuts (Ctrl+T, Ctrl+W, etc.)
       if (e.ctrlKey && !e.altKey && ['KeyT', 'KeyW', 'KeyN', 'KeyR', 'KeyL'].includes(e.code)) return;
       const keyToVK = getKeyToVK();
@@ -1372,6 +1373,8 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
       const keyToVK = getKeyToVK();
       const vk = keyToVK[e.code];
       if (vk === undefined) return;
+      // While input is blocked only releases of keys the program saw pressed get through
+      if (emu.inputBlocked && !emu.keyStates.has(vk)) return;
       e.preventDefault();
       emu.keyStates.delete(vk);
       const scanCode = e.keyCode & 0xFF;

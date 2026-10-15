@@ -20,10 +20,21 @@ const handle = await mountGame(hostDiv, {
   persistNamespace: 'sol',           // IndexedDB: registry, INI files, D:\ (default: exeName)
   onExit: () => navigate('/'),       // close button, «Выход», ExitProcess
   onTitleChange: (t) => (document.title = t),
+  audioContext: sharedCtx,           // optional; default: own context, closed on unmount
+  volume: 0.5,                       // optional initial volume 0..1 (default 1)
 });
 handle.focus();     // keyboard focus into the game (done automatically after mount)
+handle.setVolume(0.3); // master volume 0..1, applied live (handle.volume reads it back)
 handle.unmount();   // stop the emulator and clean up
 ```
+
+### Audio / volume
+
+All emulated audio (PlaySound/sndPlaySound, waveOut, DOS sound devices) goes through one
+`GainNode` owned by the runner; `volume` / `setVolume(v)` control it (clamped to 0..1,
+non-finite values ignored). That gain connects to `audioOutput` when given (any node of the
+same `AudioContext`, e.g. a host-wide master `GainNode` or an analyser), otherwise to
+`audioContext.destination`. The gain is disconnected on `unmount()`.
 
 Behaviour: one top-level window in the Windows XP Luna frame, centered in the host
 (`host` should have a size, e.g. `position: relative; height: 100%`); the emulated
@@ -31,12 +42,60 @@ screen size defaults to the host size (`screen` overrides it). Maximize is disab
 window cannot be moved or resized. While focus is inside the game, F1–F12, Space and the
 arrow keys are not passed to the browser. No desktop, taskbar or missing-DLL popups.
 
-Options beyond contract C1: `theme: 'win2k'` (debug), `onMinimize()` (default: no-op).
+Options beyond contract C1: `theme: 'win2k'` (debug), `onMinimize()` (default: no-op),
+`audioOutput`, `volume` and `GameHandle.setVolume()` / `volume` (since 0.3.0); `hooks`,
+`GameHandle.setInputBlocked()`, `answerMessageBox()`, `peek()`, `readRegistry()` (since 0.4.0).
 Other exports: `registerXpFonts(fonts)`, `LunaFrame`, `LUNA_CSS`.
 
 Notes: the Luna system colours are applied to the emulator's global colour table while a
 game is mounted (one game per page at a time). Modal dialogs are `position: fixed`, so don't
 put the host inside a CSS `transform` (use `zoom` or scale the canvas instead).
+
+## Hooks (observe / answer the program) — since 0.4.0
+
+Generic extension points; what a dialog id or a drawn string *means* is up to the host.
+They are installed before the program starts; the `hooks` object is used by reference, so
+the host may add or replace handlers later.
+
+```ts
+const handle = await mountGame(host, {
+  ...,
+  hooks: {
+    dialogCreate: (d) => (d.template === 700 ? { result: 1 } : undefined),     // skip a dialog
+    dialogInit: (d) => (d.template === 600                                     // answer it unseen
+      ? { press: 100, values: { 602: userName } } : undefined),
+    messageBox: (m) => (m.text === 'Сдать заново?' ? { hidden: true } : undefined),
+    textDraw: (t) => { /* TextOut / ExtTextOut / DrawText: { hwnd, text, x, y } */ },
+    windowText: (w) => { /* SetWindowText */ },
+    registryWrite: (r) => { /* RegSetValueEx: { path, name, type, value } */ },
+    poll: () => { /* after input was processed, else every pollIntervalMs: e.g. handle.peek(...) */ },
+    pollIntervalMs: 100,
+  },
+});
+handle.answerMessageBox(id, 6 /* IDYES */);   // for { hidden: true }
+handle.peek(0x0100579c, 4);                    // read-only memory copy
+handle.readRegistry('HKEY_CURRENT_USER\\Software\\Microsoft\\Solitaire', 'Параметры');
+handle.setInputBlocked(true);                  // host modal above the game: no keyboard/mouse input
+```
+
+| Hook / method | Semantics |
+|---|---|
+| `dialogCreate(d)` | modal dialog about to be created; `{ result }` skips it (DialogBox returns `result`) |
+| `dialogInit(d)` | after WM_INITDIALOG, before showing; `DialogPress` answers it unseen |
+| `messageBox(m)` | `{ result }` answers at once; `{ hidden: true }` keeps it pending without UI (the program waits) until `answerMessageBox(m.id, result)`; answering an unknown or already answered id is a no-op |
+| `textDraw(t)` | after TextOut / ExtTextOut / DrawText(Ex) |
+| `windowText(w)` | after SetWindowText |
+| `registryWrite(r)` | after RegSetValueEx |
+| `poll()` | after the first emulator run following host input (key, mouse, menu/accelerator command), otherwise at most every `pollIntervalMs` (default 100) while the program runs; an idle program is not polled. Errors are caught and logged |
+| `setInputBlocked(b)` | all DOM input inside the runner root (canvas, menu bar, dialogs) is swallowed and nothing is posted to the program; keys held at that moment get WM_KEYUP (as on window blur and when the tab is hidden); timers, audio and `answerMessageBox` keep working. `inputBlocked` reads it back |
+| `peek(addr, len)` | read-only copy of emulated memory (empty before start) |
+| `readRegistry(path, name)` | current value: REG_DWORD → number, REG_SZ → string (UTF-16), other → bytes; null if absent |
+
+`dialogInit` receives `controls` (texts by id) and `checked` (button states) after
+WM_INITDIALOG; `DialogPress` may also set `check` states and `clicks` (WM_COMMAND to the
+dialog procedure, e.g. radio buttons) before the final `press`. Only modal dialogs
+(DialogBoxParam/DialogBoxIndirectParam) are covered; MFC `DoModal` uses CreateDialogIndirect
+and is not hooked yet. Example adapters: `tests/test-xp-score-capture.mjs`.
 
 ## LunaFrame (frame + menu bar for pages that draw their own window)
 

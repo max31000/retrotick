@@ -2,6 +2,7 @@ import type { Emulator } from './emulator';
 import type { PEInfo } from '../pe/types';
 import { loadPE, parsePEHeader } from './pe-loader';
 import { loadNE } from './ne-loader';
+import { installApiObservers } from './hooks';
 import { FlatMemory } from './x86/flat-memory';
 import type { LoadedNE } from './ne-loader';
 import { setAnsiCodePage, setAnsiCodePageFromCP, setAnsiEncoding, guessEncodingFromBytes } from './memory';
@@ -546,6 +547,7 @@ export async function emuLoad(emu: Emulator, arrayBuffer: ArrayBuffer, peInfo: P
   registerRpcrt4(emu);
   registerAdvapi32Security(emu);
   registerHhctrl(emu);
+  installApiObservers(emu);
 
   // Build thunk dispatch table with argument count detection
   buildThunkTable(emu);

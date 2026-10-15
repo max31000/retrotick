@@ -76,12 +76,15 @@ export class PCSpeaker {
   private guitarReady = false;
   guitarMode = true;
 
-  constructor(ctx: AudioContext | null) {
+  private output: AudioNode | null = null;
+
+  constructor(ctx: AudioContext | null, output?: AudioNode) {
     this.ctx = ctx;
     if (ctx) {
+      this.output = output ?? ctx.destination;
       this.gain = ctx.createGain();
       this.gain.gain.value = 0;
-      this.gain.connect(ctx.destination);
+      this.gain.connect(this.output);
     }
   }
 
@@ -112,7 +115,7 @@ export class PCSpeaker {
       this.guitarNode.connect(this.bodyEq);
       this.bodyEq.connect(this.highCut);
       this.highCut.connect(this.guitarGain);
-      this.guitarGain.connect(this.ctx.destination);
+      this.guitarGain.connect(this.output ?? this.ctx.destination);
       this.guitarReady = true;
     } catch {
       // AudioWorklet not available — fall back to square wave

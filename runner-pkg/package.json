@@ -1,6 +1,6 @@
 {
 	"name": "@bliss/retrotick-runner",
-	"version": "0.1.0",
+	"version": "0.4.0",
 	"description": "Embeddable RetroTick runner: original Win32 games in a host element with a Windows XP Luna frame",
 	"license": "CC0-1.0",
 	"type": "module",

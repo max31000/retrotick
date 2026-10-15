@@ -39,7 +39,8 @@ BLISS_ASSETS=/path/to/xp-files npx tsx tests/test-xp-sol.mjs
 Without assets the tests print `[TEST] SKIP` and exit with code 2.
 `HARNESS_VERBOSE=1` shows emulator logs, `HARNESS_TRACE=1` enables API tracing.
 `test-mouse-buttons.mjs`, `test-locale-ru.mjs`, `test-keyboard-ru.mjs`,
-`test-update-region.mjs` and `test-dc-clip.mjs` need no binaries.
+`test-update-region.mjs`, `test-dc-clip.mjs` and `test-audio-routing.mjs` (all audio nodes go to
+`emu.audioOutput`, fake AudioContext) need no binaries.
 
 ## Runner checks (browser, Playwright for Python)
 

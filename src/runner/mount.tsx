@@ -16,9 +16,17 @@ import { registerXpFonts } from './fonts';
 import { createRunnerStorage } from './storage';
 import { applyLunaSysColors, lunaThemeFor } from './luna-system';
 import { installKeyboardGuard } from './keyboard';
+import { createMasterGain } from './audio';
 import type { GameHandle, MountOptions } from './types';
+import { decodeRegValue } from '../lib/emu/hooks';
+import { releaseHeldKeys } from '../lib/emu/release-keys';
 
 const DEFAULT_LCID = 0x419;
+/** DOM input swallowed inside the runner root while `setInputBlocked(true)` */
+const BLOCKABLE_EVENTS = [
+  'pointerdown', 'pointerup', 'pointermove', 'mousedown', 'mouseup', 'click', 'dblclick', 'contextmenu',
+  'wheel', 'touchstart', 'touchmove', 'touchend', 'keydown', 'keypress', 'keyup',
+] as const;
 const FALLBACK_SCREEN = { width: 1024, height: 768 };
 
 interface RunnerAppProps {
@@ -112,6 +120,7 @@ export async function mountGame(host: HTMLElement, opts: MountOptions): Promise<
   const storage = createRunnerStorage(opts.persistNamespace ?? opts.exeName);
   const ownAudio = opts.audioContext ? null : createAudioContext();
   const audioContext = opts.audioContext ?? ownAudio;
+  const master = createMasterGain(audioContext, opts.audioOutput, opts.volume);
 
   const root = doc.createElement('div');
   root.className = `bliss-runner${themeName === 'luna' ? ' bliss-luna-root' : ''}`;
@@ -131,6 +140,24 @@ export async function mountGame(host: HTMLElement, opts: MountOptions): Promise<
   const removeKeyboardGuard = installKeyboardGuard(root, audioContext);
 
   let emulator: Emulator | null = null;
+  let inputBlocked = false;
+  // Capture phase on the runner root: nothing inside (canvas, menus, dialog controls) sees input while blocked
+  const swallowInput = (e: Event) => {
+    if (!inputBlocked) return;
+    e.stopPropagation();
+    if (e.cancelable) e.preventDefault();
+  };
+  for (const type of BLOCKABLE_EVENTS) root.addEventListener(type, swallowInput, { capture: true, passive: false });
+  // Keys released while the page has no focus never reach us: release them for the program
+  const releaseKeys = () => {
+    if (emulator) releaseHeldKeys(emulator);
+  };
+  const onVisibility = () => {
+    if (doc.visibilityState === 'hidden') releaseKeys();
+  };
+  const win = doc.defaultView;
+  win?.addEventListener('blur', releaseKeys);
+  doc.addEventListener('visibilitychange', onVisibility);
   let exited = false;
   let unmounted = false;
   const onExit = () => {
@@ -144,17 +171,45 @@ export async function mountGame(host: HTMLElement, opts: MountOptions): Promise<
       if (unmounted) return;
       unmounted = true;
       render(null, root);
+      for (const type of BLOCKABLE_EVENTS) root.removeEventListener(type, swallowInput, { capture: true });
+      win?.removeEventListener('blur', releaseKeys);
+      doc.removeEventListener('visibilitychange', onVisibility);
       root.remove();
       removeKeyboardGuard();
       restoreColors();
       storage.close().catch(() => { /* best effort */ });
+      master.dispose();
       ownAudio?.close().catch(() => { /* already closed */ });
       emulator = null;
     },
     focus() {
       root.focus({ preventScroll: true });
     },
+    setVolume(volume: number) { master.setVolume(volume); },
+    get volume() { return master.volume; },
     get emulator() { return emulator; },
+    setInputBlocked(blocked: boolean) {
+      blocked = !!blocked;
+      if (blocked === inputBlocked) return;
+      inputBlocked = blocked;
+      const emu = emulator;
+      if (!emu) return;
+      emu.inputBlocked = blocked;
+      if (blocked) releaseHeldKeys(emu);
+    },
+    get inputBlocked() { return inputBlocked; },
+    answerMessageBox(id, result) {
+      emulator?.dismissMessageBox(id, result);
+    },
+    peek(address, length) {
+      const out = new Uint8Array(emulator ? Math.max(0, length) : 0);
+      for (let i = 0; i < out.length; i++) out[i] = emulator!.memory.readU8((address + i) >>> 0);
+      return out;
+    },
+    readRegistry(path, name) {
+      const v = emulator?.registryStore?.getValueByPath(path, name);
+      return v ? decodeRegValue(v.type, v.data, true) : null;
+    },
   };
 
   await new Promise<void>((resolve) => {
@@ -174,7 +229,13 @@ export async function mountGame(host: HTMLElement, opts: MountOptions): Promise<
           onTitleChange={opts.onTitleChange}
           onMinimize={opts.onMinimize}
           allowMaximize={opts.allowMaximize}
-          onEmulator={(emu) => { emulator = emu; resolve(); }}
+          onEmulator={(emu) => {
+            emulator = emu;
+            if (master.node) emu.audioOutput = master.node;
+            if (opts.hooks) emu.hooks = opts.hooks;
+            emu.inputBlocked = inputBlocked;
+            resolve();
+          }}
         />
       </ThemeContext.Provider>,
       root,
