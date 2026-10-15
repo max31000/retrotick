@@ -247,6 +247,11 @@ export function getWindowDC(emu: Emulator, hwnd: number): number {
 
 export { beginPaint, endPaint } from './emu-paint';
 
+/** Register a DC whose canvas state (save + transform + clip) ReleaseDC must pop. */
+export function trackChildDC(hdc: number): void {
+  childDCSet.add(hdc);
+}
+
 export function releaseChildDC(emu: Emulator, hdc: number): void {
   if (childDCSet.has(hdc)) {
     const dc = getDC(emu, hdc);

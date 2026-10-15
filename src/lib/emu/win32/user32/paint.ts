@@ -1,4 +1,5 @@
 import type { Emulator } from '../../emulator';
+import { mainWindowNonClientDC } from '../../emu-window-clip';
 import { brushFillStyle, isPatternBrush } from '../gdi32/pattern';
 import type { WindowInfo } from './types';
 import {
@@ -23,6 +24,8 @@ export function registerPaint(emu: Emulator): void {
 
   user32.register('GetWindowDC', 1, () => {
     const hwnd = emu.readArg(0);
+    // The main window's DC has a client-area origin; its window DC starts at the frame corner
+    if (hwnd && hwnd === emu.mainWindow) return mainWindowNonClientDC(emu, hwnd) || emu.getWindowDC(hwnd);
     return emu.getWindowDC(hwnd);
   });
 

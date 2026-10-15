@@ -2,7 +2,9 @@
 import type { Emulator } from './emulator';
 import type { WindowInfo } from './win32/user32/index';
 import { getNonClientMetrics } from './win32/user32/_helpers';
-import { getWindowOrigin } from './emu-window';
+import { getWindowOrigin, trackChildDC } from './emu-window';
+import type { DCInfo } from './win32/gdi32/types';
+import { OPAQUE } from './win32/types';
 import { WS_CHILD } from './win32/types';
 
 /** Rect of a child window's DC (window origin) that is not clipped away by the client
@@ -29,4 +31,33 @@ export function visibleWindowRect(emu: Emulator, hwnd: number, origin: { x: numb
     cur = parent;
   }
   return { x: l - origin.x, y: t - origin.y, w: Math.max(0, r - l), h: Math.max(0, b - t) };
+}
+
+const mainWindowDCs = new WeakMap<Emulator, number>();
+
+/**
+ * GetWindowDC for the main window: origin at the window's top-left corner (non-client area
+ * included). The main canvas only holds the client area, so non-client drawing falls outside it.
+ */
+export function mainWindowNonClientDC(emu: Emulator, hwnd: number): number {
+  const wnd = emu.handles.get<WindowInfo>(hwnd);
+  if (!wnd || !emu.canvas || !emu.canvasCtx) return 0;
+  const { bw, captionH, menuH } = getNonClientMetrics(wnd.style, wnd.hMenu !== 0, emu.isNE);
+  let hdc = mainWindowDCs.get(emu) ?? 0;
+  let dc = hdc ? emu.getDC(hdc) : null;
+  if (!dc) {
+    const info: DCInfo = {
+      canvas: emu.canvas, ctx: emu.canvasCtx, hwnd,
+      selectedBitmap: 0, selectedPen: 0x80000007, selectedBrush: 0x80000000, selectedFont: 0, selectedPalette: 0,
+      textColor: 0, bkColor: 0xFFFFFF, bkMode: OPAQUE, penPosX: 0, penPosY: 0, rop2: 13,
+    };
+    hdc = emu.handles.alloc('dc', info);
+    mainWindowDCs.set(emu, hdc);
+    dc = info;
+  }
+  dc.hwnd = hwnd;
+  dc.ctx.save();
+  dc.ctx.setTransform(1, 0, 0, 1, -bw, -(bw + captionH + menuH));
+  trackChildDC(hdc);
+  return hdc;
 }

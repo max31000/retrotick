@@ -19,8 +19,8 @@ import time
 from playwright.sync_api import sync_playwright
 
 CYRILLIC = re.compile(r"[А-Яа-яЁё]")
-GAMES = ["sol", "winmine", "freecell", "spider", "mshearts"]
-SUPPORT = ["cards.dll", "mfc42u.dll", "nddeapi.dll", "tahoma.ttf", "micross.ttf", "trebucbd.ttf"]
+GAMES = ["sol", "winmine", "freecell", "spider", "mshearts", "mspaint"]
+SUPPORT = ["cards.dll", "mfc42u.dll", "mfc42loc.dll", "nddeapi.dll", "gdiplus.dll", "tahoma.ttf", "micross.ttf", "trebucbd.ttf"]
 
 
 def launch(p, name):
@@ -128,6 +128,8 @@ def main():
             for g in games:
                 # A fresh page per game: a game that freezes the page cannot affect the next one
                 page = browser.new_page(viewport={"width": 1280, "height": 900})
+                # Never let a page grab the pointer (the browser runs on the owner's desktop)
+                page.add_init_script("Element.prototype.requestPointerLock = function () {}; Document.prototype.exitPointerLock = function () {};")
                 page.on("pageerror", lambda e, g=g: errors.append(f"{g}: {e}"))
                 page.goto(args.url)
                 page.set_input_files("#files", files)
