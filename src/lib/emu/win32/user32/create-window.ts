@@ -423,8 +423,13 @@ export function registerCreateWindow(emu: Emulator): void {
     emu.callWndProc(wnd.wndProc, hwnd, WM_SIZE, 0,
       ((ch & 0xFFFF) << 16) | (cw & 0xFFFF));
     if (wnd.visible) {
-      emu.callWndProc(wnd.wndProc, hwnd, WM_ACTIVATEAPP, 1, 0);
-      emu.callWndProc(wnd.wndProc, hwnd, WM_ACTIVATE, 1, 0);
+      // Only top-level windows are activated, and not by the *NOACTIVATE / SW_SHOWNA commands
+      const SW_SHOWMINNOACTIVE = 7, SW_SHOWNA = 8, SW_SHOWNOACTIVATE = 4;
+      const activates = nCmdShow !== SW_SHOWNOACTIVATE && nCmdShow !== SW_SHOWMINNOACTIVE && nCmdShow !== SW_SHOWNA;
+      if (activates && !(wnd.style & WS_CHILD)) {
+        emu.callWndProc(wnd.wndProc, hwnd, WM_ACTIVATEAPP, 1, 0);
+        emu.callWndProc(wnd.wndProc, hwnd, WM_ACTIVATE, 1, 0);
+      }
       // Mark window as needing paint (WM_PAINT synthesized by GetMessage)
       wnd.needsPaint = true;
       wnd.needsErase = true;
@@ -672,7 +677,6 @@ export function registerCreateWindow(emu: Emulator): void {
     return 1;
   });
   user32.register('EnumThreadWindows', 3, () => 1);
-  user32.register('WindowFromPoint', 2, () => 0);
   user32.register('FindWindowW', 2, () => 0); // not found
   user32.register('FindWindowExW', 4, () => 0); // not found
   user32.register('ChildWindowFromPoint', 3, () => {

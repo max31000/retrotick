@@ -6,7 +6,7 @@ import { decodeDib } from '../pe/decode-dib';
 import { rvaToFileOffset } from '../pe/read';
 import { resetDCLayers } from './win32/gdi32/dc-clip';
 import { getClientSize, getNonClientMetrics } from './win32/user32/_helpers';
-import { visibleWindowRect } from './emu-window-clip';
+import { visibleWindowRect, popupCanvasOrigin } from './emu-window-clip';
 import { emuFindResourceEntryForModule } from './emu-load';
 
 // Track DCs that have canvas state saved (child window translate)
@@ -156,7 +156,7 @@ export function getWindowDC(emu: Emulator, hwnd: number): number {
     }
     const dc = getDC(emu, existing);
     if (dc) {
-      const origin = isPopup ? { x: wnd.x || 0, y: wnd.y || 0 } : getWindowOrigin(emu, hwnd);
+      const origin = isPopup ? popupCanvasOrigin(emu, wnd) : getWindowOrigin(emu, hwnd);
       let ccsYOffset = 0;
       const internalH = (wnd as any)._ccsInternalHeight;
       if (internalH && internalH > wnd.height) {
@@ -221,7 +221,7 @@ export function getWindowDC(emu: Emulator, hwnd: number): number {
   emu.windowDCs.set(hwnd, hdc);
   // For windows sharing the main canvas, apply coordinate offset and clip
   if (needsTranslate && wnd) {
-    const origin = isPopup ? { x: wnd.x || 0, y: wnd.y || 0 } : getWindowOrigin(emu, hwnd);
+    const origin = isPopup ? popupCanvasOrigin(emu, wnd) : getWindowOrigin(emu, hwnd);
     let ccsYOffset = 0;
     const internalH = (wnd as any)._ccsInternalHeight;
     if (internalH && internalH > wnd.height) {

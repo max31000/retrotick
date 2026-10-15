@@ -4,6 +4,7 @@ import { writeMsgStruct, isCharMessage, convertCharParam } from './_helpers';
 import { encodeMBCS } from '../../memory';
 import { emuCompleteThunk } from '../../emu-exec';
 import { getNextCascadePos } from '../../emulator';
+import { handleToolbarMessage } from './toolbar';
 import { handleStatusBarMessage } from './statusbar';
 import { validateWindow } from './update-region';
 import {
@@ -296,7 +297,7 @@ export function registerMessage(emu: Emulator): void {
 
     // For built-in controls (wndProc=0), handle the message internally
     if (!wnd.wndProc) {
-      const builtin = handleBuiltinMessage(hwnd, message, wParam, lParam);
+      const builtin = handleBuiltinMessage(hwnd, message, wParam, lParam, wide);
       if (message === WM_PAINT) validateWindow(emu, wnd, null);
       return builtin ?? 0;
     }
@@ -352,6 +353,9 @@ export function registerMessage(emu: Emulator): void {
   const WM_MDIICONARRANGE = 0x0228;
 
   const handleBuiltinMessage = (hwnd: number, message: number, wParam: number, lParam: number, wide = false): number | null => {
+    // List box / combo box item strings are UTF-16 for the W message functions
+    const rdStr = (p: number): string => (wide ? emu.memory.readUTF16String(p) : emu.memory.readCString(p));
+    const wrStr = (p: number, t: string): void => { if (wide) emu.memory.writeUTF16String(p, t); else emu.memory.writeCString(p, t); };
     const wnd = emu.handles.get<WindowInfo>(hwnd);
     if (!wnd) return null;
 
@@ -935,7 +939,7 @@ export function registerMessage(emu: Emulator): void {
           wnd.lbItems!.push('');
           wnd.lbItemData!.push(lParam);
         } else {
-          const text = lParam ? emu.memory.readCString(lParam) : '';
+          const text = lParam ? rdStr(lParam) : '';
           wnd.lbItems!.push(text);
           wnd.lbItemData!.push(0);
         }
@@ -947,7 +951,7 @@ export function registerMessage(emu: Emulator): void {
           wnd.lbItems!.splice(idx, 0, '');
           wnd.lbItemData!.splice(idx, 0, lParam);
         } else {
-          const text = lParam ? emu.memory.readCString(lParam) : '';
+          const text = lParam ? rdStr(lParam) : '';
           wnd.lbItems!.splice(idx, 0, text);
           wnd.lbItemData!.splice(idx, 0, 0);
         }
@@ -976,7 +980,7 @@ export function registerMessage(emu: Emulator): void {
           return 4;
         }
         const text = wnd.lbItems![wParam];
-        if (lParam) emu.memory.writeCString(lParam, text);
+        if (lParam) wrStr(lParam, text);
         return text.length;
       }
       if (message === LB_GETTEXTLEN) {
@@ -1047,7 +1051,7 @@ export function registerMessage(emu: Emulator): void {
         return 0;
       }
       if (message === LB_FINDSTRING || message === LB_FINDSTRINGEXACT) {
-        const search = lParam ? emu.memory.readCString(lParam).toLowerCase() : '';
+        const search = lParam ? rdStr(lParam).toLowerCase() : '';
         const start = wParam === -1 ? 0 : (wParam + 1) % wnd.lbItems!.length;
         const exact = message === LB_FINDSTRINGEXACT;
         for (let n = 0; n < wnd.lbItems!.length; n++) {
@@ -1058,7 +1062,7 @@ export function registerMessage(emu: Emulator): void {
         return LB_ERR;
       }
       if (message === LB_SELECTSTRING) {
-        const search = lParam ? emu.memory.readCString(lParam).toLowerCase() : '';
+        const search = lParam ? rdStr(lParam).toLowerCase() : '';
         const start = wParam === -1 ? 0 : (wParam + 1) % wnd.lbItems!.length;
         for (let n = 0; n < wnd.lbItems!.length; n++) {
           const i = (start + n) % wnd.lbItems!.length;
@@ -1146,14 +1150,14 @@ export function registerMessage(emu: Emulator): void {
       if (!wnd.cbItems) { wnd.cbItems = []; wnd.cbItemData = []; wnd.cbSelectedIndex = -1; }
 
       if (message === CB_ADDSTRING) {
-        const text = lParam ? emu.memory.readCString(lParam) : '';
+        const text = lParam ? rdStr(lParam) : '';
         wnd.cbItems!.push(text);
         wnd.cbItemData!.push(0);
         return wnd.cbItems!.length - 1;
       }
       if (message === CB_INSERTSTRING) {
         const idx = wParam === -1 || wParam >= wnd.cbItems!.length ? wnd.cbItems!.length : wParam;
-        const text = lParam ? emu.memory.readCString(lParam) : '';
+        const text = lParam ? rdStr(lParam) : '';
         wnd.cbItems!.splice(idx, 0, text);
         wnd.cbItemData!.splice(idx, 0, 0);
         return idx;
@@ -1184,7 +1188,7 @@ export function registerMessage(emu: Emulator): void {
       if (message === CB_GETLBTEXT) {
         if (wParam >= 0 && wParam < wnd.cbItems!.length) {
           const text = wnd.cbItems![wParam];
-          if (lParam) emu.memory.writeCString(lParam, text);
+          if (lParam) wrStr(lParam, text);
           return text.length;
         }
         return CB_ERR;
@@ -1194,7 +1198,7 @@ export function registerMessage(emu: Emulator): void {
         return CB_ERR;
       }
       if (message === CB_FINDSTRING || message === CB_FINDSTRINGEXACT) {
-        const search = lParam ? emu.memory.readCString(lParam).toLowerCase() : '';
+        const search = lParam ? rdStr(lParam).toLowerCase() : '';
         const start = wParam === -1 ? 0 : (wParam + 1) % wnd.cbItems!.length;
         const exact = message === CB_FINDSTRINGEXACT;
         for (let n = 0; n < wnd.cbItems!.length; n++) {
@@ -1205,7 +1209,7 @@ export function registerMessage(emu: Emulator): void {
         return CB_ERR;
       }
       if (message === CB_SELECTSTRING) {
-        const search = lParam ? emu.memory.readCString(lParam).toLowerCase() : '';
+        const search = lParam ? rdStr(lParam).toLowerCase() : '';
         const start = wParam === -1 ? 0 : (wParam + 1) % wnd.cbItems!.length;
         for (let n = 0; n < wnd.cbItems!.length; n++) {
           const i = (start + n) % wnd.cbItems!.length;
@@ -1793,6 +1797,12 @@ export function registerMessage(emu: Emulator): void {
       if (message >= 0x1300 && message < 0x1400) return 0;
     }
 
+    // Toolbar messages (and painting / mouse for the built-in toolbar)
+    if (cn === 'TOOLBARWINDOW32') {
+      const r = handleToolbarMessage(emu, hwnd, wnd, message, wParam, lParam);
+      if (r !== null) return r;
+    }
+
     // StatusBar messages
     if (cn === 'MSCTLS_STATUSBAR32') {
       const r = handleStatusBarMessage(emu, wnd, message, wParam, lParam);
@@ -2032,7 +2042,6 @@ export function registerMessage(emu: Emulator): void {
   user32.register('PostThreadMessageW', 4, () => 1); // pretend success
 
   user32.register('GetMessageTime', 0, () => (Date.now() & 0xFFFFFFFF) >>> 0);
-  user32.register('GetMessagePos', 0, () => 0); // (0,0)
 
   // DDE message functions
   user32.register('ReuseDDElParam', 5, () => {

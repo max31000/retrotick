@@ -297,6 +297,8 @@ export class Emulator {
   canvas: HTMLCanvasElement | null = null;
   canvasCtx: CanvasRenderingContext2D | null = null;
   currentCursor = 0; // handle of current cursor
+  /** Last mouse position in main-window client (canvas) coordinates */
+  cursorPos = { x: 0, y: 0 };
   glContext: GL1Context | null = null;
 
   windowsVersion: WindowsVersion = WINDOWS_2000;

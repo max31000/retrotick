@@ -95,3 +95,22 @@ export const R2_XORPEN = 7;
 export const R2_NOP = 11;
 export const R2_COPYPEN = 13;
 export const R2_WHITE = 16;
+
+// --- Font enumeration (wingdi.h) ---
+export const TRUETYPE_FONTTYPE = 0x0004;
+export const FIXED_PITCH = 1;
+export const VARIABLE_PITCH = 2;
+export const FF_ROMAN = 0x10;
+export const FF_SWISS = 0x20;
+export const FF_MODERN = 0x30;
+export const TMPF_FIXED_PITCH = 0x01;
+export const TMPF_VECTOR = 0x02;
+export const TMPF_TRUETYPE = 0x04;
+export const NTM_REGULAR = 0x00000040;
+export const LF_FULLFACESIZE = 64;
+/** NEWTEXTMETRICEXA / NEWTEXTMETRICEXW */
+export const ENUM_TM_SIZE_A = 96;
+export const ENUM_TM_SIZE_W = 100;
+/** ENUMLOGFONTEXA / ENUMLOGFONTEXW */
+export const ENUMLOGFONTEX_SIZE_A = 188;
+export const ENUMLOGFONTEX_SIZE_W = 348;

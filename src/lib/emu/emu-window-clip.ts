@@ -5,6 +5,7 @@ import { getNonClientMetrics } from './win32/user32/_helpers';
 import { getWindowOrigin, trackChildDC } from './emu-window';
 import type { DCInfo } from './win32/gdi32/types';
 import { OPAQUE } from './win32/types';
+import { mainClientOrigin } from './win32/user32/cursor-pos';
 import { WS_CHILD } from './win32/types';
 
 /** Rect of a child window's DC (window origin) that is not clipped away by the client
@@ -60,4 +61,10 @@ export function mainWindowNonClientDC(emu: Emulator, hwnd: number): number {
   dc.ctx.setTransform(1, 0, 0, 1, -bw, -(bw + captionH + menuH));
   trackChildDC(hdc);
   return hdc;
+}
+
+/** Canvas position of a top-level popup: its screen position relative to the main client area. */
+export function popupCanvasOrigin(emu: Emulator, wnd: WindowInfo): { x: number; y: number } {
+  const o = mainClientOrigin(emu);
+  return { x: (wnd.x || 0) - o.x, y: (wnd.y || 0) - o.y };
 }

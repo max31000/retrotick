@@ -12,6 +12,7 @@ import { registerMetafile } from './metafile';
 import { registerClipApi } from './clip-api';
 import { registerPathXform } from './path-xform';
 import { registerDrawShapes } from './draw-shapes';
+import { registerFontEnum } from './font-enum';
 
 export type { DCInfo, BitmapInfo, PenInfo, BrushInfo } from './types';
 
@@ -29,4 +30,5 @@ export function registerGdi32(emu: Emulator): void {
   registerClipApi(emu);
   registerPathXform(emu);
   registerDrawShapes(emu);
+  registerFontEnum(emu);
 }

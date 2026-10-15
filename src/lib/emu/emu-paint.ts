@@ -8,6 +8,7 @@ import { Region, type Rect } from './region';
 import { getUpdateRegion, validateWindow, clientRect, invalidateWindow, clientOffsetInDC } from './win32/user32/update-region';
 import { pushVisClip, popVisClip } from './win32/gdi32/dc-clip';
 import { paintScrollBars } from './win32/user32/nc-scroll';
+import { popupCanvasOrigin } from './emu-window-clip';
 import { getWindowDC, getDC, releaseChildDC, getBrush, isDescendantOfMain } from './emu-window';
 
 // Track DCs that have WS_CLIPCHILDREN state saved
@@ -133,9 +134,10 @@ export function endPaint(emu: Emulator, hwnd: number): void {
 export function invalidateOverlappingPopups(emu: Emulator, area: Rect): void {
   for (const [h, w] of emu.handles.findByType('window') as [number, WindowInfo][]) {
     if (!w || !w.visible || h === emu.mainWindow || isDescendantOfMain(emu, h) || !w.wndProc) continue;
-    const l = Math.max(area.left, w.x), t = Math.max(area.top, w.y);
-    const r = Math.min(area.right, w.x + w.width), b = Math.min(area.bottom, w.y + w.height);
+    const { x: wx, y: wy } = popupCanvasOrigin(emu, w);
+    const l = Math.max(area.left, wx), t = Math.max(area.top, wy);
+    const r = Math.min(area.right, wx + w.width), b = Math.min(area.bottom, wy + w.height);
     if (r <= l || b <= t) continue;
-    invalidateWindow(emu, w, Region.fromRect(l - w.x, t - w.y, r - w.x, b - w.y), true);
+    invalidateWindow(emu, w, Region.fromRect(l - wx, t - wy, r - wx, b - wy), true);
   }
 }

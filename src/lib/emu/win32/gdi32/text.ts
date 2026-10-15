@@ -261,11 +261,6 @@ export function registerText(emu: Emulator): void {
   gdi32.register('TranslateCharsetInfo', 3, () => 0); // fail
   gdi32.register('GetFontAssocStatus', 1, () => 0); // no font association
 
-  gdi32.register('EnumFontsA', 4, () => 0); // return 0 = no fonts enumerated
-  gdi32.register('EnumFontsW', 4, () => 0);
-  gdi32.register('EnumFontFamiliesW', 4, () => 1);
-  gdi32.register('EnumFontFamiliesExW', 5, () => 1);
-  gdi32.register('EnumFontFamiliesExA', 5, () => 1);
   gdi32.register('AddFontResourceA', 1, () => 0);
   gdi32.register('AddFontResourceW', 1, () => 0);
   gdi32.register('RemoveFontResourceA', 1, () => 0);

@@ -1228,6 +1228,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
     const rect = canvas.getBoundingClientRect();
     const x = Math.round((e.clientX - rect.left) * canvas.width / rect.width);
     const y = Math.round((e.clientY - rect.top) * canvas.height / rect.height);
+    emu.cursorPos = { x, y };
     if (emu.capturedWindow) {
       // Auto-release capture when no buttons pressed and cursor is outside the
       // captured window (matches Windows behavior for WM_MOUSEMOVE tracking)

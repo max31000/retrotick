@@ -11,6 +11,7 @@ import { registerRect } from './rect';
 import { registerMenu } from './menu';
 import { registerMenuLoad } from './menu-load';
 import { registerResource } from './resource';
+import { registerCursorPos } from './cursor-pos';
 import { registerInput } from './input';
 import { registerWindowLong } from './window-long';
 import { registerText } from './text';
@@ -37,6 +38,7 @@ export function registerUser32(emu: Emulator): void {
   registerMenuLoad(emu);
   registerResource(emu);
   registerInput(emu);
+  registerCursorPos(emu);
   registerWindowLong(emu);
   registerText(emu);
   registerScroll(emu);

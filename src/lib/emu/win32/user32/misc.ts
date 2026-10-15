@@ -508,7 +508,6 @@ export function registerMisc(emu: Emulator): void {
   });
 
   user32.register('LockWindowUpdate', 1, () => 1);
-  user32.register('SetCursorPos', 2, () => 1);
   user32.register('ClipCursor', 1, () => 1);
   user32.register('WindowFromDC', 1, () => 0);
   user32.register('CountClipboardFormats', 0, () => 0);
