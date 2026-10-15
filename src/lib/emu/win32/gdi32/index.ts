@@ -10,6 +10,7 @@ import { registerRegion } from './region';
 import { registerPalette } from './palette';
 import { registerMetafile } from './metafile';
 import { registerClipApi } from './clip-api';
+import { registerPathXform } from './path-xform';
 
 export type { DCInfo, BitmapInfo, PenInfo, BrushInfo } from './types';
 
@@ -25,4 +26,5 @@ export function registerGdi32(emu: Emulator): void {
   registerPalette(emu);
   registerMetafile(emu);
   registerClipApi(emu);
+  registerPathXform(emu);
 }

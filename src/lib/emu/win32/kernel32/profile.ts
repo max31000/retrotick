@@ -279,6 +279,18 @@ export function registerProfile(emu: Emulator): void {
   kernel32.register('WritePrivateProfileStructA', 5, () => 1);
   kernel32.register('GetPrivateProfileStructA', 5, () => 0); // fail — key not found
 
+  // GetProfileSectionA(app, buf, size): "key=value" pairs of a WIN.INI section, double-null terminated
+  kernel32.register('GetProfileSectionA', 3, () => {
+    const appPtr = emu.readArg(0);
+    const bufPtr = emu.readArg(1);
+    const bufSize = emu.readArg(2);
+    if (!bufPtr || bufSize === 0) return 0;
+    const s = ps();
+    const section = appPtr ? emu.memory.readCString(appPtr) : '';
+    const pairs = s ? s.getSectionKeys(WIN_INI, section).map(k => `${k}=${s.getString(WIN_INI, section, k, '')}`) : [];
+    return writeDoubleNullListA(emu, pairs, bufPtr, bufSize);
+  });
+
   // ===== GetPrivateProfileSectionNames =====
 
   kernel32.register('GetPrivateProfileSectionNamesA', 3, () => {

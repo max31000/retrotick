@@ -23,4 +23,16 @@ export function registerMetafile(emu: Emulator): void {
   gdi32.register('SetMetaFileBitsEx', 2, () => emu.handles.alloc('metafile', {}));
   gdi32.register('SetMetaFileBits', 1, () => emu.handles.alloc('metafile', {}));
   gdi32.register('GetMetaFileBitsEx', 3, () => 0);
+
+  // Metafile recording and disk metafiles are not supported: creation/opening fails (NULL).
+  gdi32.register('CreateEnhMetaFileA', 4, () => 0);
+  gdi32.register('CreateEnhMetaFileW', 4, () => 0);
+  gdi32.register('CloseEnhMetaFile', 1, () => 0);
+  gdi32.register('GetEnhMetaFileA', 1, () => 0);
+  gdi32.register('GetEnhMetaFileW', 1, () => 0);
+  gdi32.register('GetMetaFileA', 1, () => 0);
+  gdi32.register('GetMetaFileW', 1, () => 0);
+  gdi32.register('CopyMetaFileA', 2, () => 0);
+  gdi32.register('EnumEnhMetaFile', 5, () => 0);
+  gdi32.register('PlayEnhMetaFileRecord', 4, () => 0);
 }

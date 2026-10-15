@@ -177,4 +177,6 @@ export function registerShell32(emu: Emulator): void {
 
   shell32.register('FindExecutableA', 3, () => 31); // SE_ERR_NOASSOC (failure)
   shell32.register('SHFree', 1, () => 0);
+  // SHChangeNotify(wEventId, uFlags, dwItem1, dwItem2): no shell views to notify
+  shell32.register('SHChangeNotify', 4, () => 0);
 }

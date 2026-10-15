@@ -1,4 +1,5 @@
 import type { Emulator } from '../emulator';
+import { S_OK, E_NOTIMPL, PROPVARIANT_SIZE } from './types';
 
 export function registerOle32(emu: Emulator): void {
   const ole32 = emu.registerDll('OLE32.DLL');
@@ -108,6 +109,25 @@ export function registerOle32(emu: Emulator): void {
 
   // CoMarshalInterface(pStm, riid, pUnk, dwDestContext, pvDestContext, mshlflags) — E_NOTIMPL
   ole32.register('CoMarshalInterface', 6, () => 0x80004001);
+
+  // Cross-apartment marshaling through streams is not supported: fail and clear the out pointer.
+  ole32.register('CoMarshalInterThreadInterfaceInStream', 3, () => {
+    const ppStm = emu.readArg(2);
+    if (ppStm) emu.memory.writeU32(ppStm, 0);
+    return E_NOTIMPL;
+  });
+  ole32.register('CoGetInterfaceAndReleaseStream', 3, () => {
+    const ppv = emu.readArg(2);
+    if (ppv) emu.memory.writeU32(ppv, 0);
+    return E_NOTIMPL;
+  });
+
+  // PropVariantClear(pvar): reset to VT_EMPTY (the emulator owns no PROPVARIANT payloads)
+  ole32.register('PropVariantClear', 1, () => {
+    const p = emu.readArg(0);
+    if (p) for (let i = 0; i < PROPVARIANT_SIZE; i += 4) emu.memory.writeU32(p + i, 0);
+    return S_OK;
+  });
 
   // CoUnmarshalInterface(pStm, riid, ppv) — E_NOTIMPL
   ole32.register('CoUnmarshalInterface', 3, () => 0x80004001);

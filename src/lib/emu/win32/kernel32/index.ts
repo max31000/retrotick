@@ -7,6 +7,7 @@ import { registerSync } from './sync';
 import { registerTls } from './tls';
 import { registerFile } from './file';
 import { registerLocale } from './locale';
+import { registerLocaleConvert } from './locale-convert';
 import { registerSysinfo } from './sysinfo';
 import { registerEnv } from './env';
 import { registerResource } from './resource';
@@ -23,6 +24,7 @@ export function registerKernel32(emu: Emulator): void {
   registerTls(emu);
   registerFile(emu);
   registerLocale(emu);
+  registerLocaleConvert(emu);
   registerSysinfo(emu);
   registerEnv(emu);
   registerResource(emu);

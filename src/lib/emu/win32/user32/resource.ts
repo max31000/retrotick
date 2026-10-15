@@ -1,4 +1,5 @@
 import type { Emulator } from '../../emulator';
+import { ICONINFO_FICON, ICONINFO_XHOTSPOT, ICONINFO_YHOTSPOT, ICONINFO_HBMMASK, ICONINFO_HBMCOLOR } from '../constants-gdi';
 import { SC_FIRST } from '../constants-ctl';
 import type { WindowInfo } from './types';
 import type { AccelEntry } from '../../../pe/types';
@@ -357,6 +358,18 @@ export function registerResource(emu: Emulator): void {
   user32.register('TranslateAcceleratorW', 3, translateAccelImpl);
 
   user32.register('CreateIcon', 7, () => emu.handles.alloc('icon', {}));
+  // CreateIconIndirect(ICONINFO*): keep the hotspot and bitmaps with the icon handle
+  user32.register('CreateIconIndirect', 1, () => {
+    const p = emu.readArg(0);
+    if (!p) return 0;
+    return emu.handles.alloc('icon', {
+      isIcon: emu.memory.readU32(p + ICONINFO_FICON) !== 0,
+      xHotspot: emu.memory.readU32(p + ICONINFO_XHOTSPOT),
+      yHotspot: emu.memory.readU32(p + ICONINFO_YHOTSPOT),
+      hbmMask: emu.memory.readU32(p + ICONINFO_HBMMASK),
+      hbmColor: emu.memory.readU32(p + ICONINFO_HBMCOLOR),
+    });
+  });
   user32.register('DestroyIcon', 1, () => 1);
   user32.register('DestroyCursor', 1, () => 1);
   user32.register('GetIconInfo', 2, () => 0);

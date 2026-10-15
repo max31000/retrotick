@@ -265,24 +265,32 @@ export function registerText(emu: Emulator): void {
   gdi32.register('EnumFontsW', 4, () => 0);
   gdi32.register('EnumFontFamiliesW', 4, () => 1);
   gdi32.register('EnumFontFamiliesExW', 5, () => 1);
+  gdi32.register('EnumFontFamiliesExA', 5, () => 1);
   gdi32.register('AddFontResourceA', 1, () => 0);
   gdi32.register('AddFontResourceW', 1, () => 0);
   gdi32.register('RemoveFontResourceA', 1, () => 0);
   gdi32.register('RemoveFontResourceW', 1, () => 0);
 
-  gdi32.register('GetTextFaceW', 3, () => {
-    const _hdc = emu.readArg(0);
+  // GetTextFace(hdc, c, lpName): face name of the selected font. With a buffer returns the
+  // characters copied (without the terminator); without one, the length including it.
+  const getTextFace = (wide: boolean) => () => {
+    const hdc = emu.readArg(0);
     const nCount = emu.readArg(1);
     const bufPtr = emu.readArg(2);
-    const faceName = 'Tahoma';
-    if (bufPtr && nCount > 0) {
-      const len = Math.min(faceName.length, nCount - 1);
-      for (let i = 0; i < len; i++) emu.memory.writeU16(bufPtr + i * 2, faceName.charCodeAt(i));
-      emu.memory.writeU16(bufPtr + len * 2, 0);
-      return len;
+    const faceName = getDCFont(emu, hdc).faceName;
+    if (!bufPtr) return faceName.length + 1;
+    if (nCount <= 0) return 0;
+    const len = Math.min(faceName.length, nCount - 1);
+    for (let i = 0; i < len; i++) {
+      if (wide) emu.memory.writeU16(bufPtr + i * 2, faceName.charCodeAt(i));
+      else emu.memory.writeU8(bufPtr + i, faceName.charCodeAt(i) & 0xFF);
     }
-    return faceName.length;
-  });
+    if (wide) emu.memory.writeU16(bufPtr + len * 2, 0);
+    else emu.memory.writeU8(bufPtr + len, 0);
+    return len;
+  };
+  gdi32.register('GetTextFaceW', 3, getTextFace(true));
+  gdi32.register('GetTextFaceA', 3, getTextFace(false));
 
   gdi32.register('GetTextMetricsW', 2, () => {
     const _hdc = emu.readArg(0);

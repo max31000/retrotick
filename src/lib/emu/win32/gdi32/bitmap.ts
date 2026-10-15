@@ -405,6 +405,7 @@ export function registerBitmap(emu: Emulator): void {
     return img.height;
   });
   gdi32.register('GetBitmapBits', 3, () => 0);
+  gdi32.register('SetBitmapBits', 3, () => 0); // device-dependent bits are not supported
 
   gdi32.register('BitBlt', 9, () => {
     const hdcDest = emu.readArg(0);

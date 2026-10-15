@@ -429,6 +429,8 @@ export const CSIDL_COMMON_DOCUMENTS = 0x002E;
 export const CSIDL_FLAG_CREATE = 0x8000;
 export const CSIDL_FLAG_MASK = 0xFF00;
 export const S_OK = 0;
+export const E_NOTIMPL = 0x80004001;
+export const PROPVARIANT_SIZE = 16;
 export const S_FALSE = 1;
 export const E_INVALIDARG = 0x80070057;
 
