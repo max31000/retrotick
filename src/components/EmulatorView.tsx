@@ -57,6 +57,8 @@ interface EmulatorViewProps {
   storage?: EmulatorStorage;
   /** Embedded mode: the window is laid out in normal flow (the host positions it), cannot be moved, resized or maximized, and missing-DLL notices are logged instead of shown */
   embedded?: boolean;
+  /** Embedded mode: windows with WS_MAXIMIZEBOX may maximize to the screen (host) size */
+  allowMaximize?: boolean;
 }
 
 function buildMKFlags(e: PointerEvent): number {
@@ -387,7 +389,7 @@ function renderMdiChildOverlay(
 
 // --- Main EmulatorView ---
 
-export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, commandLine, onStop, onFocus, onReady, onRunExe, onOpenHelp, onSetupEmulator, audioContext: sharedAudioContext, onTitleChange, onIconChange, onMinimize, onRegisterCloseHandler, processRegistry, zIndex = 100, focused = true, minimized: minimizedProp, lcid, screenSize, storage, embedded = false }: EmulatorViewProps) {
+export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, commandLine, onStop, onFocus, onReady, onRunExe, onOpenHelp, onSetupEmulator, audioContext: sharedAudioContext, onTitleChange, onIconChange, onMinimize, onRegisterCloseHandler, processRegistry, zIndex = 100, focused = true, minimized: minimizedProp, lcid, screenSize, storage, embedded = false, allowMaximize = false }: EmulatorViewProps) {
   const store = storage ?? desktopStorage;
   const exeBaseName = exeName.split(/[/\\]/).pop() || exeName;
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -691,7 +693,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
         setHasMainWindow(true);
         setWindowTitle(wnd.title);
         onTitleChange?.(wnd.title);
-        setWindowStyle(embedded ? wnd.style & ~WS_MAXIMIZEBOX : wnd.style);
+        setWindowStyle(embedded && !allowMaximize ? wnd.style & ~WS_MAXIMIZEBOX : wnd.style);
         setMinimized(!!wnd.minimized);
         setMaximized(!!wnd.maximized);
         // Use emulated window position only for initial mainWindow placement (cascade),
@@ -1466,6 +1468,20 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
       emu.postMessage(emu.mainWindow, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
       preMaxState.current = { x: windowPos.x, y: windowPos.y, w: canvasSize.w, h: canvasSize.h };
       const wnd = emu.handles.get<WindowInfo>(emu.mainWindow);
+      if (embedded) {
+        // Fill the host (= emulated screen): screen minus the frame chrome around the canvas
+        // offset sizes are layout sizes (unaffected by a CSS transform on the host)
+        const frame = desktopRef.current, canvasEl = canvasRef.current;
+        const chromeW = frame && canvasEl ? frame.offsetWidth - canvasEl.offsetWidth : 0;
+        const chromeH = frame && canvasEl ? frame.offsetHeight - canvasEl.offsetHeight : 0;
+        const dw = Math.max(1, emu.screenWidth - chromeW), dh = Math.max(1, emu.screenHeight - chromeH);
+        setCanvasSize({ w: dw, h: dh });
+        setTimeout(() => applyCanvasToEmu(dw, dh), 0);
+        if (wnd) { wnd.maximized = true; wnd.minimized = false; }
+        setMaximized(true);
+        setMinimized(false);
+        return;
+      }
       const hasCaption = wnd ? (wnd.style & WS_CAPTION) === WS_CAPTION : true;
       const captionH = hasCaption ? 21 : 0;
       const menuH = (menus.length > 0) ? 20 : 0;
@@ -1479,7 +1495,21 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
       setMaximized(true);
       setMinimized(false);
     }
-  }, [maximized, windowPos, canvasSize, menus.length, applyCanvasToEmu]);
+  }, [maximized, windowPos, canvasSize, menus.length, applyCanvasToEmu, embedded]);
+
+  // Embedded maximize: the menu bar may re-wrap at the new width, so fit the frame to the
+  // screen once more after layout.
+  useEffect(() => {
+    const emu = emuRef.current;
+    if (!embedded || !maximized || !emu || !desktopRef.current) return;
+    const frame = desktopRef.current;
+    const dh = emu.screenHeight - frame.offsetHeight, dw = emu.screenWidth - frame.offsetWidth;
+    if ((dh || dw) && canvasSize.h + dh > 0 && canvasSize.w + dw > 0) {
+      const w = canvasSize.w + dw, h = canvasSize.h + dh;
+      setCanvasSize({ w, h });
+      setTimeout(() => applyCanvasToEmu(w, h), 0);
+    }
+  }, [embedded, maximized, canvasSize.w, canvasSize.h, menus, applyCanvasToEmu]);
 
   const handleTitleBarDblClick = useCallback(() => {
     if (minimized) {
@@ -1670,7 +1700,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
         iconUrl={iconUrl}
         iconElement={!iconUrl ? EXE_ICON_16 : undefined}
         focused={parentFocused}
-        maximized={embedded ? false : maximized}
+        maximized={embedded && !allowMaximize ? false : maximized}
         minimized={false}
         blocked={hasModalDialog}
         onBlockedClick={flashModal}
@@ -1684,7 +1714,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
           }
         }}
         onMinimize={handleMinimize}
-        onMaximize={embedded ? undefined : handleMaximize}
+        onMaximize={embedded && !allowMaximize ? undefined : handleMaximize}
         onTitleBarMouseDown={embedded ? undefined : onTitleBarMouseDown}
         onTitleBarDblClick={handleTitleBarDblClick}
         onResizeStart={embedded ? undefined : onResizeStart}

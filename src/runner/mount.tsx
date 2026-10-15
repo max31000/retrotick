@@ -34,6 +34,7 @@ interface RunnerAppProps {
   onExit: () => void;
   onTitleChange?: (title: string) => void;
   onMinimize?: () => void;
+  allowMaximize?: boolean;
   onEmulator: (emu: Emulator) => void;
 }
 
@@ -76,6 +77,7 @@ function RunnerApp(p: RunnerAppProps) {
       storage={p.storage}
       focused={focused}
       embedded
+      allowMaximize={p.allowMaximize}
     />
   );
 }
@@ -171,6 +173,7 @@ export async function mountGame(host: HTMLElement, opts: MountOptions): Promise<
           onExit={onExit}
           onTitleChange={opts.onTitleChange}
           onMinimize={opts.onMinimize}
+          allowMaximize={opts.allowMaximize}
           onEmulator={(emu) => { emulator = emu; resolve(); }}
         />
       </ThemeContext.Provider>,

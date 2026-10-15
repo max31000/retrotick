@@ -37,6 +37,8 @@ export interface MountOptions {
   onTitleChange?(title: string): void;
   /** Called when the caption «Свернуть» button is pressed (extension; default: no-op). */
   onMinimize?(): void;
+  /** Let resizable programs (WS_MAXIMIZEBOX) maximize to the host size. Default false. */
+  allowMaximize?: boolean;
 }
 
 export interface GameHandle {
