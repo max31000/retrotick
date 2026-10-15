@@ -1,9 +1,10 @@
 import type { Emulator } from '../../emulator';
 import type { WindowInfo } from './types';
 import { setFocusWindow } from './focus';
+import { applyWindowText } from './text';
 import {
   WM_CLOSE, WM_DESTROY, WM_PAINT, WM_ERASEBKGND, WM_SYSCOMMAND,
-  WM_NCCREATE, WM_NCDESTROY, WM_NCCALCSIZE, WM_NCPAINT, WM_NCACTIVATE,
+  WM_NCCREATE, WM_NCDESTROY, WM_NCCALCSIZE, WM_NCPAINT, WM_NCACTIVATE, WM_SETTEXT,
   WM_GETMINMAXINFO, WM_SHOWWINDOW, WM_ACTIVATE, WM_SETCURSOR, WM_NCHITTEST,
   WM_WINDOWPOSCHANGING, WM_WINDOWPOSCHANGED, WM_ACTIVATEAPP, WM_SIZE,
   SC_CLOSE, SC_MINIMIZE, SC_MAXIMIZE, SC_RESTORE,
@@ -128,6 +129,11 @@ export function registerWndProc(emu: Emulator): void {
       }
       case WM_SETCURSOR:
         return 1;
+      case WM_SETTEXT: {
+        const textWnd = emu.handles.get<WindowInfo>(hwnd);
+        if (textWnd && lParam) applyWindowText(emu, hwnd, textWnd, textWnd.unicode ? emu.memory.readUTF16String(lParam) : emu.memory.readCString(lParam));
+        return 1;
+      }
       case WM_ACTIVATE: {
         // DefWindowProc: an activated (not minimized) window takes the keyboard focus
         const actWnd = emu.handles.get<WindowInfo>(hwnd);

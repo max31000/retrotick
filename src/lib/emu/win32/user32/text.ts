@@ -4,7 +4,7 @@ import { fillTextBitmap } from '../../emu-render';
 import { decodeMBCS, encodeMBCS } from '../../memory';
 import { formatString, stackArgReader, vaListArgReader } from '../../format';
 import type { WindowInfo } from './types';
-import { OPAQUE } from '../types';
+import { OPAQUE, WM_SETTEXT } from '../types';
 
 /** Process '&' prefix: strip '&' before accelerator char, '&&' becomes '&'.
  *  Returns { display, underlineIndex } where underlineIndex is the char to underline (-1 if none). */
@@ -99,50 +99,35 @@ function drawTextWrapLines(
 }
 
 
+/** Store a window's text and refresh what displays it (DefWindowProc WM_SETTEXT). */
+export function applyWindowText(emu: Emulator, hwnd: number, wnd: WindowInfo, newTitle: string): void {
+  if (newTitle === wnd.title) return;
+  wnd.title = newTitle;
+  if (hwnd === emu.mainWindow) {
+    emu.onWindowChange?.(wnd);
+  } else if (wnd.parent && wnd.parent === emu.mainWindow) {
+    const parentWnd = emu.handles.get<WindowInfo>(wnd.parent);
+    if (parentWnd) parentWnd.needsPaint = true;
+  }
+  emu.notifyControlOverlays();
+}
+
 export function registerText(emu: Emulator): void {
   const user32 = emu.registerDll('USER32.DLL');
 
-  // SetWindowTextA
-  user32.register('SetWindowTextA', 2, () => {
+  // SetWindowText sends WM_SETTEXT to windows with a window procedure (DefWindowProc stores
+  // the text); built-in controls are updated directly.
+  const setWindowText = (wide: boolean) => () => {
     const hwnd = emu.readArg(0);
     const textPtr = emu.readArg(1);
     const wnd = emu.handles.get<WindowInfo>(hwnd);
-    if (wnd && textPtr) {
-      const newTitle = emu.memory.readCString(textPtr);
-      if (newTitle !== wnd.title) {
-        wnd.title = newTitle;
-        if (hwnd === emu.mainWindow) {
-          emu.onWindowChange?.(wnd);
-        } else if (wnd.parent && wnd.parent === emu.mainWindow) {
-          const parentWnd = emu.handles.get<WindowInfo>(wnd.parent);
-          if (parentWnd) { parentWnd.needsPaint = true; }
-        }
-        emu.notifyControlOverlays();
-      }
-    }
+    if (!wnd) return 0;
+    if (wnd.wndProc) return emu.callWndProc(wnd.wndProc, hwnd, WM_SETTEXT, 0, textPtr) ? 1 : 0;
+    if (textPtr) applyWindowText(emu, hwnd, wnd, wide ? emu.memory.readUTF16String(textPtr) : emu.memory.readCString(textPtr));
     return 1;
-  });
-
-  // SetWindowTextW
-  user32.register('SetWindowTextW', 2, () => {
-    const hwnd = emu.readArg(0);
-    const textPtr = emu.readArg(1);
-    const wnd = emu.handles.get<WindowInfo>(hwnd);
-    if (wnd && textPtr) {
-      const newTitle = emu.memory.readUTF16String(textPtr);
-      if (newTitle !== wnd.title) {
-        wnd.title = newTitle;
-        if (hwnd === emu.mainWindow) {
-          emu.onWindowChange?.(wnd);
-        } else if (wnd.parent && wnd.parent === emu.mainWindow) {
-          const parentWnd = emu.handles.get<WindowInfo>(wnd.parent);
-          if (parentWnd) { parentWnd.needsPaint = true; }
-        }
-        emu.notifyControlOverlays();
-      }
-    }
-    return 1;
-  });
+  };
+  user32.register('SetWindowTextA', 2, setWindowText(false));
+  user32.register('SetWindowTextW', 2, setWindowText(true));
 
   // Helper: look up window title, falling back to process registry for cross-emulator hwnds
   function getWindowTitle(hwnd: number): string | undefined {
