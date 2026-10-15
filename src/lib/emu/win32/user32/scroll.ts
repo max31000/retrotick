@@ -1,37 +1,13 @@
 import type { Emulator } from '../../emulator';
-
-const SIF_RANGE = 0x0001;
-const SIF_PAGE = 0x0002;
-const SIF_POS = 0x0004;
-const SIF_TRACKPOS = 0x0010;
-const SIF_ALL = SIF_RANGE | SIF_PAGE | SIF_POS | SIF_TRACKPOS;
-
-interface ScrollState {
-  nMin: number;
-  nMax: number;
-  nPage: number;
-  nPos: number;
-  nTrackPos: number;
-}
-
-function getScrollKey(hwnd: number, nBar: number): string {
-  return `${hwnd}:${nBar}`;
-}
+import { scrollStateOf, clampScrollPos, updateScrollBarVisibility, showScrollBar, paintScrollBars } from './nc-scroll';
+import {
+  SB_HORZ, SB_VERT, SB_BOTH, SIF_RANGE, SIF_PAGE, SIF_POS, SIF_DISABLENOSCROLL, SIF_TRACKPOS,
+} from '../constants-ctl';
 
 export function registerScroll(emu: Emulator): void {
   const user32 = emu.registerDll('USER32.DLL');
   const { memory } = emu;
-  const scrollStates = new Map<string, ScrollState>();
-
-  function getState(hwnd: number, nBar: number): ScrollState {
-    const key = getScrollKey(hwnd, nBar);
-    let state = scrollStates.get(key);
-    if (!state) {
-      state = { nMin: 0, nMax: 0, nPage: 0, nPos: 0, nTrackPos: 0 };
-      scrollStates.set(key, state);
-    }
-    return state;
-  }
+  const getState = (hwnd: number, nBar: number) => scrollStateOf(emu, hwnd, nBar);
 
   // SetScrollPos(hWnd, nBar, nPos, bRedraw) -> int oldPos
   user32.register('SetScrollPos', 4, () => {
@@ -39,6 +15,8 @@ export function registerScroll(emu: Emulator): void {
     const state = getState(hwnd, nBar);
     const old = state.nPos;
     state.nPos = nPos | 0;
+    clampScrollPos(state);
+    paintScrollBars(emu, hwnd);
     return old;
   });
 
@@ -48,7 +26,7 @@ export function registerScroll(emu: Emulator): void {
     return getState(hwnd, nBar).nPos;
   });
 
-  // SetScrollInfo(hWnd, nBar, lpsi, bRedraw) -> int
+  // SetScrollInfo(hWnd, nBar, lpsi, bRedraw) -> int new position
   user32.register('SetScrollInfo', 4, () => {
     const hwnd = emu.readArg(0), nBar = emu.readArg(1), lpsi = emu.readArg(2);
     const fMask = memory.readU32(lpsi + 4);
@@ -59,6 +37,9 @@ export function registerScroll(emu: Emulator): void {
     }
     if (fMask & SIF_PAGE) state.nPage = memory.readU32(lpsi + 16);
     if (fMask & SIF_POS) state.nPos = memory.readI32(lpsi + 20);
+    if (fMask & (SIF_RANGE | SIF_PAGE | SIF_POS)) clampScrollPos(state);
+    if (fMask & (SIF_RANGE | SIF_PAGE)) updateScrollBarVisibility(emu, hwnd, nBar, !!(fMask & SIF_DISABLENOSCROLL));
+    else paintScrollBars(emu, hwnd);
     return state.nPos;
   });
 
@@ -83,6 +64,9 @@ export function registerScroll(emu: Emulator): void {
     const state = getState(hwnd, nBar);
     state.nMin = nMinPos | 0;
     state.nMax = nMaxPos | 0;
+    state.nPage = 0;
+    clampScrollPos(state);
+    updateScrollBarVisibility(emu, hwnd, nBar, false);
     return 1;
   });
 
@@ -95,6 +79,13 @@ export function registerScroll(emu: Emulator): void {
     return 1;
   });
 
-  user32.register('ShowScrollBar', 3, () => 1);
+  // ShowScrollBar(hWnd, wBar, bShow) -> BOOL
+  user32.register('ShowScrollBar', 3, () => {
+    const hwnd = emu.readArg(0), bar = emu.readArg(1), show = emu.readArg(2) !== 0;
+    if (bar === SB_HORZ || bar === SB_BOTH) showScrollBar(emu, hwnd, SB_HORZ, show);
+    if (bar === SB_VERT || bar === SB_BOTH) showScrollBar(emu, hwnd, SB_VERT, show);
+    paintScrollBars(emu, hwnd);
+    return 1;
+  });
   user32.register('EnableScrollBar', 3, () => 1);
 }

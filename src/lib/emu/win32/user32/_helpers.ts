@@ -2,7 +2,8 @@ import type { Emulator } from '../../emulator';
 
 import type { WinMsg } from '../../emulator';
 import type { WindowInfo } from './types';
-import { WS_CAPTION, WS_DLGFRAME, WS_BORDER, WS_THICKFRAME, WM_GETMINMAXINFO, WM_CHAR } from '../types';
+import { WS_CAPTION, WS_DLGFRAME, WS_BORDER, WS_THICKFRAME, WM_GETMINMAXINFO, WM_CHAR, WS_CHILD, WS_VSCROLL, WS_HSCROLL } from '../types';
+import { METRIC_SCROLL_SIZE } from '../constants-user';
 import { WM_DEADCHAR, WM_SYSCHAR, WM_SYSDEADCHAR } from '../constants-ctl';
 import { encodeMBCS, decodeMBCS } from '../../memory';
 
@@ -47,7 +48,6 @@ export function writeMsgStruct(emu: Emulator, pMsg: number, msg: WinMsg, wide = 
 function clientToScreen(emu: Emulator, hwnd: number): { x: number; y: number } {
   const wnd = hwnd ? emu.handles.get<WindowInfo>(hwnd) : null;
   if (!wnd) return { x: 0, y: 0 };
-  const WS_CHILD = 0x40000000;
   if (wnd.style & WS_CHILD) {
     const parentOrigin = clientToScreen(emu, wnd.parent || 0);
     return { x: parentOrigin.x + wnd.x, y: parentOrigin.y + wnd.y };
@@ -62,6 +62,8 @@ function clientToScreen(emu: Emulator, hwnd: number): { x: number; y: number } {
 // Compute client area from total window dimensions
 export function getNonClientMetrics(style: number, hasMenu: boolean, win16 = false) {
   let bw = 0, captionH = 0, menuH = 0;
+  // Child windows never have a menu bar: their hMenu field is the control ID
+  if (style & WS_CHILD) hasMenu = false;
   if (win16) {
     // Windows 3.1: thinner chrome — 1px border, 20px caption, 20px menu
     if (style & (WS_THICKFRAME | WS_DLGFRAME | WS_BORDER)) bw = 1;
@@ -106,8 +108,16 @@ export function clampToMinTrackSize(emu: Emulator, hwnd: number, wnd: WindowInfo
 
 export function getClientSize(style: number, hasMenu: boolean, totalW: number, totalH: number, win16 = false) {
   const { bw, captionH, menuH } = getNonClientMetrics(style, hasMenu, win16);
+  // Standard scroll bars of child windows take room from the client area (right / bottom)
+  const { sbW, sbH } = scrollBarInsets(style);
   return {
-    cw: Math.max(1, totalW - 2 * bw),
-    ch: Math.max(1, totalH - 2 * bw - captionH - menuH),
+    cw: Math.max(1, totalW - 2 * bw - sbW),
+    ch: Math.max(1, totalH - 2 * bw - captionH - menuH - sbH),
   };
+}
+
+/** Width of a vertical / height of a horizontal standard scroll bar of a child window. */
+export function scrollBarInsets(style: number): { sbW: number; sbH: number } {
+  if (!(style & WS_CHILD)) return { sbW: 0, sbH: 0 };
+  return { sbW: style & WS_VSCROLL ? METRIC_SCROLL_SIZE : 0, sbH: style & WS_HSCROLL ? METRIC_SCROLL_SIZE : 0 };
 }

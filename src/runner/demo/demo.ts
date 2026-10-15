@@ -2,8 +2,8 @@
 // original XP files and start any of the games. Not part of any build.
 import { mountGame, type GameHandle } from '../index';
 
-const GAMES = ['sol.exe', 'winmine.exe', 'freecell.exe', 'spider.exe', 'mshearts.exe'];
-const DLLS = ['cards.dll', 'mfc42u.dll', 'nddeapi.dll'];
+const GAMES = ['sol.exe', 'winmine.exe', 'freecell.exe', 'spider.exe', 'mshearts.exe', 'mspaint.exe'];
+const DLLS = ['cards.dll', 'mfc42u.dll', 'mfc42loc.dll', 'nddeapi.dll', 'gdiplus.dll'];
 
 interface DemoState {
   files: Map<string, File>;

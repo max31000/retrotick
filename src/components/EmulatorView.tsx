@@ -5,7 +5,8 @@ import { Emulator } from '../lib/emu/emulator';
 import type { DialogInfo, ControlOverlay, ProcessRegistry, CommonDialogRequest } from '../lib/emu/emulator';
 import type { WindowInfo } from '../lib/emu/win32/user32/index';
 import { WM_MOUSEMOVE, WM_COMMAND, WM_SYSCOMMAND, WM_SIZE, WM_GETMINMAXINFO, WM_KEYDOWN, WM_KEYUP, WM_CHAR, WM_INITMENU, WM_INITMENUPOPUP, SC_MINIMIZE, SC_MAXIMIZE, SC_RESTORE, SC_CLOSE } from '../lib/emu/win32/types';
-import { mkFlagsFromButtons, diffButtons, buttonMessage, POINTER_BUTTON_TO_BIT } from '../lib/emu/mouse-buttons';
+import { mkFlagsFromButtons, diffButtons, buttonMessage, POINTER_BUTTON_TO_BIT, BUTTON_BIT_LEFT } from '../lib/emu/mouse-buttons';
+import { scrollBarPress, scrollBarMove, scrollBarRelease } from '../lib/emu/win32/user32/nc-scroll';
 import { OrderedInputQueue } from './ordered-input-queue';
 import { MessageBox, MsgBoxIcon, MB_ICONERROR } from './win2k/MessageBox';
 import { MenuBar } from './win2k/MenuBar';
@@ -1268,6 +1269,8 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
   const handlePointerEvent = useCallback((e: PointerEvent, msg: number) => {
     const target = resolvePointerTarget(e, msg === WM_MOUSEMOVE);
     if (!target) return;
+    // A standard scroll bar being dragged gets the mouse instead of the window under it
+    if (msg === WM_MOUSEMOVE && scrollBarMove(emuRef.current!, target.x, target.y)) return;
     emuRef.current!.postMessage(target.hwnd, msg, buildMKFlags(e), target.lParam);
   }, [resolvePointerTarget]);
 
@@ -1288,6 +1291,11 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
         const emu = emuRef.current;
         const target = resolvePointerTarget(saved);
         if (!emu || !target) return;
+        // Clicks on a child window's standard scroll bar drive the bar (non-client area)
+        if (t.bit === BUTTON_BIT_LEFT) {
+          if (!t.pressed && scrollBarRelease(emu)) return;
+          if (t.pressed && scrollBarPress(emu, target.hwnd, (target.lParam << 16) >> 16, target.lParam >> 16)) return;
+        }
         if (!t.pressed) emu.postMessage(target.hwnd, WM_MOUSEMOVE, buildMKFlags(saved), target.lParam);
         const msg = buttonMessage(emu, t, target.hwnd, target.x, target.y, time);
         emu.postMessage(target.hwnd, msg, buildMKFlags(saved), target.lParam);

@@ -8,7 +8,7 @@ import {
   WM_CREATE, WM_NCCREATE, WM_NCCALCSIZE, WM_SHOWWINDOW,
   WM_SIZE, WM_ACTIVATE, WM_ACTIVATEAPP, WM_DESTROY,
   WM_NCDESTROY, WM_WINDOWPOSCHANGED,
-  CW_USEDEFAULT, HCBT_CREATEWND,
+  CW_USEDEFAULT, HCBT_CREATEWND, WS_CHILD as WS_CHILD_FLAG,
 } from '../types';
 
 /** Lower bound for CW_USEDEFAULT sizes on tiny screens */
@@ -542,7 +542,17 @@ export function registerCreateWindow(emu: Emulator): void {
   user32.register('BringWindowToTop', 1, () => 1);
   user32.register('GetDesktopWindow', 0, () => 0);
   user32.register('IsWindow', 1, () => 1);
-  user32.register('IsWindowVisible', 1, () => 1);
+  // IsWindowVisible: the window and all its parents have WS_VISIBLE
+  user32.register('IsWindowVisible', 1, () => {
+    let wnd = emu.handles.get<WindowInfo>(emu.readArg(0));
+    if (!wnd) return 0;
+    for (let depth = 0; wnd && depth < 64; depth++) {
+      if (!wnd.visible) return 0;
+      if (!(wnd.style & WS_CHILD_FLAG) || !wnd.parent) return 1;
+      wnd = emu.handles.get<WindowInfo>(wnd.parent);
+    }
+    return 1;
+  });
   user32.register('IsWindowEnabled', 1, () => {
     const hwnd = emu.readArg(0);
     const wnd = emu.handles.get<WindowInfo>(hwnd);

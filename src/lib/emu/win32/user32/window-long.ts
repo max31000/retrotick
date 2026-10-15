@@ -1,6 +1,7 @@
 import type { Emulator } from '../../emulator';
 import type { WindowInfo } from './types';
 import { getClientSize } from './_helpers';
+import { WS_VISIBLE } from '../types';
 
 export function registerWindowLong(emu: Emulator): void {
   const user32 = emu.registerDll('USER32.DLL');
@@ -14,7 +15,8 @@ export function registerWindowLong(emu: Emulator): void {
     const wnd = emu.handles.get<WindowInfo>(hwnd);
     if (!wnd) return 0;
 
-    if (index === -16) return wnd.style; // GWL_STYLE
+    // GWL_STYLE: WS_VISIBLE reflects the current visibility (ShowWindow/SetWindowPos change it)
+    if (index === -16) return ((wnd.style & ~WS_VISIBLE) | (wnd.visible ? WS_VISIBLE : 0)) >>> 0;
     if (index === -20) return wnd.exStyle; // GWL_EXSTYLE
     if (index === -21) return wnd.userData; // GWL_USERDATA
     if (index === -4) return wnd.wndProc || builtinProc(); // GWL_WNDPROC
@@ -43,7 +45,9 @@ export function registerWindowLong(emu: Emulator): void {
       wnd.wndProc = (value === emu._builtinWndProcA || value === emu._builtinWndProcW) ? 0 : value;
     }
     else if (index === -16) {
-      old = wnd.style; wnd.style = value;
+      old = ((wnd.style & ~WS_VISIBLE) | (wnd.visible ? WS_VISIBLE : 0)) >>> 0;
+      wnd.style = value;
+      wnd.visible = !!(value & WS_VISIBLE);
       if (hwnd === emu.mainWindow) {
         const { cw, ch } = getClientSize(wnd.style, wnd.hMenu !== 0, wnd.width, wnd.height);
         emu.setupCanvasSize(cw, ch);

@@ -272,7 +272,7 @@ export function registerMisc(emu: Emulator): void {
     const hWinPosInfo = emu.readArg(0);
     const dwp = emu.handles.get<DeferWindowPosInfo>(hWinPosInfo);
     if (dwp && dwp.entries) {
-      const SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2;
+      const SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_SHOWWINDOW = 0x40, SWP_HIDEWINDOW = 0x80;
       for (const e of dwp.entries) {
         const wnd = emu.handles.get<WindowInfo>(e.hWnd);
         if (!wnd) continue;
@@ -280,6 +280,8 @@ export function registerMisc(emu: Emulator): void {
         if (!(e.uFlags & SWP_NOMOVE)) {
           wnd.x = e.x; wnd.y = e.y;
         }
+        if (e.uFlags & SWP_SHOWWINDOW) wnd.visible = true;
+        if (e.uFlags & SWP_HIDEWINDOW) wnd.visible = false;
         if (!(e.uFlags & SWP_NOSIZE)) {
           const clamped = clampToMinTrackSize(emu, e.hWnd, wnd, e.cx, e.cy);
           if (wnd.width !== clamped.w || wnd.height !== clamped.h) sizeChanged = true;

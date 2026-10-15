@@ -86,3 +86,22 @@ export const DT_BOTTOM = 0x0008;
 
 // --- Window-menu commands (winuser.h): SC_SIZE is the lowest SC_* value ---
 export const SC_FIRST = 0xF000;
+
+// --- Scroll bars (winuser.h) ---
+export const SB_HORZ = 0;
+export const SB_VERT = 1;
+export const SB_CTL = 2;
+export const SB_BOTH = 3;
+export const SB_LINEUP = 0;
+export const SB_LINEDOWN = 1;
+export const SB_PAGEUP = 2;
+export const SB_PAGEDOWN = 3;
+export const SB_THUMBPOSITION = 4;
+export const SB_THUMBTRACK = 5;
+export const SB_ENDSCROLL = 8;
+export const SIF_RANGE = 0x0001;
+export const SIF_PAGE = 0x0002;
+export const SIF_POS = 0x0004;
+export const SIF_DISABLENOSCROLL = 0x0008;
+export const SIF_TRACKPOS = 0x0010;
+export const SCROLL_MIN_THUMB = 8;

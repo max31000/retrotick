@@ -7,6 +7,7 @@ import { renderChildControls } from './emu-render';
 import { Region, type Rect } from './region';
 import { getUpdateRegion, validateWindow, clientRect, invalidateWindow, clientOffsetInDC } from './win32/user32/update-region';
 import { pushVisClip, popVisClip } from './win32/gdi32/dc-clip';
+import { paintScrollBars } from './win32/user32/nc-scroll';
 import { getWindowDC, getDC, releaseChildDC, getBrush, isDescendantOfMain } from './emu-window';
 
 // Track DCs that have WS_CLIPCHILDREN state saved
@@ -117,6 +118,8 @@ export function endPaint(emu: Emulator, hwnd: number): void {
   }
   if (wnd) wnd.painting = false;
   if (hdc) releaseChildDC(emu, hdc);
+  // The standard scroll bars live in the non-client area: redraw them over any overpaint
+  paintScrollBars(emu, hwnd);
 
   renderChildControls(emu, hwnd);
   const painted = wnd?.paintRect;
