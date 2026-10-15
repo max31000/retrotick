@@ -2,6 +2,8 @@
 // with the DC pen width, brush (solid, hatch or pattern) and ROP2 (see raster.ts).
 import type { Emulator } from '../../emulator';
 import type { DCInfo } from './types';
+import { R2_COPYPEN } from '../constants-gdi';
+import { colorRefOf, isPatternBrush } from './pattern';
 import {
   Mask, ellipseSpans, roundRectSpans, polygonSpans, penPath, paintShape, penWidth, penVisible,
   isInsideFrame,
@@ -50,9 +52,43 @@ function strokePoints(emu: Emulator, dc: DCInfo, pts: [number, number][], close:
   const pen = emu.getPen(dc.selectedPen);
   if (!penVisible(pen) || pts.length < 2) return;
   const w = penWidth(pen);
+  // Fast path: 1-pixel horizontal/vertical segments in R2_COPYPEN are plain rectangles
+  if (w === 1 && !close && pts.length === 2 && (dc.rop2 || R2_COPYPEN) === R2_COPYPEN) {
+    const [[ax, ay], [bx, by]] = pts;
+    if (ay === by || ax === bx) {
+      const c = colorRefOf(emu, dc, pen.color);
+      dc.ctx.fillStyle = cssColor(c);
+      // The end point is not drawn (LineTo semantics)
+      if (ay === by && ax !== bx) dc.ctx.fillRect(Math.min(ax, bx + (bx < ax ? 1 : 0)), ay, Math.abs(bx - ax), 1);
+      else if (ax === bx && ay !== by) dc.ctx.fillRect(ax, Math.min(ay, by + (by < ay ? 1 : 0)), 1, Math.abs(by - ay));
+      return;
+    }
+  }
   const m = maskFor(pointsBox(pts, w));
   penPath(m, pts, w, close);
   paintShape(emu, dc, null, m, null, pen);
+}
+
+const cssColor = (c: number) => `rgb(${c & 0xFF},${(c >> 8) & 0xFF},${(c >> 16) & 0xFF})`;
+
+/** Rectangle in R2_COPYPEN with a solid brush and a 1-pixel (or no) pen: plain fills. */
+function fastRectangle(emu: Emulator, dc: DCInfo, f: { outer: Box; inner: Box; w: number; pen: boolean }): boolean {
+  if ((dc.rop2 || R2_COPYPEN) !== R2_COPYPEN || (f.pen && f.w !== 1)) return false;
+  const brush = emu.getBrush(dc.selectedBrush);
+  if (isPatternBrush(brush)) return false;
+  const [l, t, r, b] = f.outer, [il, it, ir, ib] = f.inner;
+  if (brush && !brush.isNull && ir > il && ib > it) {
+    dc.ctx.fillStyle = cssColor(colorRefOf(emu, dc, brush.color));
+    dc.ctx.fillRect(il, it, ir - il, ib - it);
+  }
+  if (f.pen && r > l && b > t) {
+    dc.ctx.fillStyle = cssColor(colorRefOf(emu, dc, emu.getPen(dc.selectedPen)!.color));
+    dc.ctx.fillRect(l, t, r - l, 1);
+    dc.ctx.fillRect(l, b - 1, r - l, 1);
+    dc.ctx.fillRect(l, t, 1, b - t);
+    dc.ctx.fillRect(r - 1, t, 1, b - t);
+  }
+  return true;
 }
 
 export function registerDrawShapes(emu: Emulator): void {
@@ -105,6 +141,7 @@ export function registerDrawShapes(emu: Emulator): void {
     if (!dc) return 0;
     const box = norm(emu.readArg(1) | 0, emu.readArg(2) | 0, emu.readArg(3) | 0, emu.readArg(4) | 0);
     const f = frameBoxes(emu, dc, box);
+    if (rectangular && fastRectangle(emu, dc, f)) { emu.syncDCToCanvas(hdc); return 1; }
     const fill = maskFor(f.outer);
     let outline: Mask | null = null;
     if (f.pen) {

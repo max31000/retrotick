@@ -4,7 +4,8 @@
 import type { Emulator } from '../../emulator';
 import type { DCInfo, PenInfo, BrushInfo } from './types';
 import { PS_NULL } from '../types';
-import { PS_STYLE_MASK, PS_INSIDEFRAME, R2_NOP } from '../constants-gdi';
+import { PS_STYLE_MASK, PS_INSIDEFRAME, R2_NOP, R2_COPYPEN } from '../constants-gdi';
+import { blitImageData } from './scratch';
 import { brushPixels, patternAt, colorRefOf, type BrushPixels } from './pattern';
 
 /** Bounding-box pixel mask in DC coordinates. */
@@ -174,6 +175,22 @@ type Source = { solid: number } | { pattern: BrushPixels };
 /** Combine the masked pixels with the destination through the DC's ROP2. */
 export function paintMask(emu: Emulator, dc: DCInfo, m: Mask, src: Source): void {
   if (m.w <= 0 || m.h <= 0 || dc.rop2 === R2_NOP) return;
+  const rop2 = dc.rop2 || R2_COPYPEN;
+  // Fast path: a solid colour copied as is needs no read-back — fill the mask's row runs
+  if (rop2 === R2_COPYPEN && 'solid' in src && src.solid >= 0) {
+    dc.ctx.fillStyle = `rgb(${src.solid & 0xFF},${(src.solid >> 8) & 0xFF},${(src.solid >> 16) & 0xFF})`;
+    for (let ly = 0; ly < m.h; ly++) {
+      const row = ly * m.w;
+      for (let lx = 0; lx < m.w; lx++) {
+        if (!m.bits[row + lx]) continue;
+        let end = lx + 1;
+        while (end < m.w && m.bits[row + end]) end++;
+        dc.ctx.fillRect(m.x + lx, m.y + ly, end - lx, 1);
+        lx = end;
+      }
+    }
+    return;
+  }
   const tf = dc.ctx.getTransform();
   const ox = Math.round(tf.e), oy = Math.round(tf.f);
   const cw = dc.canvas.width, ch = dc.canvas.height;
@@ -184,25 +201,21 @@ export function paintMask(emu: Emulator, dc: DCInfo, m: Mask, src: Source): void
   const w = x1 - x0, h = y1 - y0;
   const img = dc.ctx.getImageData(x0 + ox, y0 + oy, w, h);
   const d = img.data;
-  const rop2 = dc.rop2 || 13;
   let any = false;
   for (let y = y0; y < y1; y++) {
     for (let x = x0; x < x1; x++) {
-      if (!m.bits[(y - m.y) * m.w + (x - m.x)]) continue;
-      const c = 'solid' in src ? src.solid : patternAt(src.pattern, x, y);
-      if (c < 0) continue;
       const i = ((y - y0) * w + (x - x0)) * 4;
+      const c = m.bits[(y - m.y) * m.w + (x - m.x)] ? ('solid' in src ? src.solid : patternAt(src.pattern, x, y)) : -1;
+      // Untouched pixels become fully transparent so drawing the block back leaves them alone
+      // (re-drawing a partially transparent pixel onto itself would change it)
+      if (c < 0) { d[i + 3] = 0; continue; }
       const dst = d[i] | (d[i + 1] << 8) | (d[i + 2] << 16);
       const v = rop2Apply(rop2, c, dst);
       d[i] = v & 0xFF; d[i + 1] = (v >> 8) & 0xFF; d[i + 2] = (v >> 16) & 0xFF; d[i + 3] = 255;
       any = true;
     }
   }
-  if (!any) return;
-  // drawImage (unlike putImageData) honours the clip region and transform
-  const tmp = new OffscreenCanvas(w, h);
-  tmp.getContext('2d')!.putImageData(img, 0, 0);
-  dc.ctx.drawImage(tmp, x0, y0);
+  if (any) blitImageData(dc, img, x0, y0);
 }
 
 /** Fill `fill` with the DC brush and `outline` with the DC pen (outline wins on overlap). */

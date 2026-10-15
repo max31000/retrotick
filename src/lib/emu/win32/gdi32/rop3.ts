@@ -3,6 +3,7 @@
 import type { Emulator } from '../../emulator';
 import type { DCInfo, BrushInfo } from './types';
 import { brushPixels, patternAt } from './pattern';
+import { blitImageData } from './scratch';
 
 /** ROP3 truth-table byte of a raster operation code. */
 export const rop3Index = (rop: number): number => (rop >>> 16) & 0xFF;
@@ -42,7 +43,5 @@ export function bltRop3(emu: Emulator, dc: DCInfo, x: number, y: number, w: numb
       d[o] = v & 0xFF; d[o + 1] = (v >> 8) & 0xFF; d[o + 2] = (v >> 16) & 0xFF; d[o + 3] = 255;
     }
   }
-  const tmp = new OffscreenCanvas(w, h);
-  tmp.getContext('2d')!.putImageData(dst, 0, 0);
-  dc.ctx.drawImage(tmp, x, y);
+  blitImageData(dc, dst, x, y);
 }
