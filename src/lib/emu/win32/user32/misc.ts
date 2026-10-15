@@ -3,15 +3,9 @@ import type { WindowInfo } from './types';
 import { getClientSize, clampToMinTrackSize } from './_helpers';
 import { emuCompleteThunk } from '../../emu-exec';
 import { launchHelpFile } from '../../help-launcher';
-import {
-  SM_CXSCREEN, SM_CYSCREEN, SM_CYMENU, SM_CYCAPTION, SM_CXBORDER, SM_CYBORDER,
-  SM_CXFRAME, SM_CYFRAME, SM_CXEDGE, SM_CYEDGE, SM_CXFIXEDFRAME, SM_CYFIXEDFRAME,
-  SM_CXSIZE, SM_CYSIZE,
-  SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
-  SYS_COLORS,
-  SM_CXDOUBLECLK, SM_CYDOUBLECLK, SM_CXDRAG, SM_CYDRAG, SM_CMOUSEBUTTONS,
-  DEFAULT_DOUBLE_CLICK_TIME, DEFAULT_DRAG_CX, DEFAULT_DRAG_CY, DEFAULT_MOUSE_BUTTONS,
-} from '../types';
+import { SYS_COLORS, DEFAULT_DOUBLE_CLICK_TIME } from '../types';
+import { SPI_GETWORKAREA, SPI_GETNONCLIENTMETRICS, SPI_GETICONTITLELOGFONT } from '../constants-user';
+import { getSystemMetric, writeNonClientMetrics, writeIconTitleFont } from './system-metrics';
 
 interface DeferWindowPosEntry { hWnd: number; x: number; y: number; cx: number; cy: number; uFlags: number }
 interface DeferWindowPosInfo { entries: DeferWindowPosEntry[] }
@@ -32,29 +26,7 @@ export function registerMisc(emu: Emulator): void {
   user32.register('DragObject', 5, () => 0);
 
   // System metrics
-  user32.register('GetSystemMetrics', 1, () => {
-    const idx = emu.readArg(0);
-    switch (idx) {
-      case SM_CXSCREEN: return emu.screenWidth;
-      case SM_CYSCREEN: return emu.screenHeight;
-      case SM_CYMENU: return 19;
-      case SM_CYCAPTION: return 18;
-      case SM_CXBORDER: case SM_CYBORDER: return 1;
-      case SM_CXEDGE: case SM_CYEDGE: return 2;
-      case SM_CXFRAME: case SM_CYFRAME: return 4;
-      case SM_CXFIXEDFRAME: case SM_CYFIXEDFRAME: return 3;
-      case SM_CXSIZE: case SM_CYSIZE: return 18;
-      case SM_XVIRTUALSCREEN: case SM_YVIRTUALSCREEN: return 0;
-      case SM_CXVIRTUALSCREEN: return emu.screenWidth;
-      case SM_CYVIRTUALSCREEN: return emu.screenHeight;
-      case SM_CXDOUBLECLK: return emu.doubleClickCx;
-      case SM_CYDOUBLECLK: return emu.doubleClickCy;
-      case SM_CXDRAG: return DEFAULT_DRAG_CX;
-      case SM_CYDRAG: return DEFAULT_DRAG_CY;
-      case SM_CMOUSEBUTTONS: return DEFAULT_MOUSE_BUTTONS;
-      default: return 0;
-    }
-  });
+  user32.register('GetSystemMetrics', 1, () => getSystemMetric(emu, emu.readArg(0)));
 
   // GetDialogBaseUnits: low word = avg char width, high word = char height
   user32.register('GetDialogBaseUnits', 0, () => (13 << 16) | 7);
@@ -171,12 +143,10 @@ export function registerMisc(emu: Emulator): void {
     emu.memory.writeU32(pPoint + 4, (emu.memory.readI32(pPoint + 4) + origin.y) | 0);
     return 1;
   });
-  const systemParametersInfo = () => {
+  const systemParametersInfo = (wide: boolean) => () => {
     const uiAction = emu.readArg(0);
     const _uiParam = emu.readArg(1);
     const pvParam = emu.readArg(2);
-    const SPI_GETWORKAREA = 0x30;
-    const SPI_GETNONCLIENTMETRICS = 0x29;
     if (uiAction === SPI_GETWORKAREA && pvParam) {
       // RECT { left, top, right, bottom }
       emu.memory.writeU32(pvParam, 0);      // left
@@ -185,10 +155,12 @@ export function registerMisc(emu: Emulator): void {
       emu.memory.writeU32(pvParam + 12, emu.screenHeight); // bottom
       return 1;
     }
+    if (uiAction === SPI_GETNONCLIENTMETRICS) return writeNonClientMetrics(emu, pvParam, wide) ? 1 : 0;
+    if (uiAction === SPI_GETICONTITLELOGFONT) return writeIconTitleFont(emu, pvParam, wide) ? 1 : 0;
     return 0;
   };
-  user32.register('SystemParametersInfoA', 4, systemParametersInfo);
-  user32.register('SystemParametersInfoW', 4, systemParametersInfo);
+  user32.register('SystemParametersInfoA', 4, systemParametersInfo(false));
+  user32.register('SystemParametersInfoW', 4, systemParametersInfo(true));
   user32.register('FlashWindow', 2, () => 0);
   // WINDOWPLACEMENT: length(4) flags(4) showCmd(4) ptMinPosition(8) ptMaxPosition(8) rcNormalPosition(16) = 44 bytes
   user32.register('GetWindowPlacement', 2, () => {
