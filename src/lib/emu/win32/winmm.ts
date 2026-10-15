@@ -856,7 +856,7 @@ export function registerWinmm(emu: Emulator): void {
       };
       device.sourceNode.connect(gainNode);
       gainNode.connect(device.processorNode);
-      device.processorNode.connect(ctx.destination); // required for processing to run
+      device.processorNode.connect(emu.audioOutput ?? ctx.destination); // required for processing to run (outputs silence)
     }).catch(() => {
       // Mic permission denied — fall back to silence
       device.recording = false;

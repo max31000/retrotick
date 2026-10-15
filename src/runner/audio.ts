@@ -24,7 +24,13 @@ export function createMasterGain(ctx: AudioContext | null, output?: AudioNode, i
     try {
       node = ctx.createGain();
       node.gain.value = volume;
-      node.connect(output ?? ctx.destination);
+      try {
+        node.connect(output ?? ctx.destination);
+      } catch (e) {
+        // e.g. audioOutput belongs to another AudioContext: keep the volume control working
+        console.warn('[runner] audioOutput not connectable, using the destination:', e);
+        node.connect(ctx.destination);
+      }
     } catch (e) {
       console.warn('[runner] master gain unavailable:', e);
       node = null;
