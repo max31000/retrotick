@@ -68,3 +68,14 @@ export function popupCanvasOrigin(emu: Emulator, wnd: WindowInfo): { x: number; 
   const o = mainClientOrigin(emu);
   return { x: (wnd.x || 0) - o.x, y: (wnd.y || 0) - o.y };
 }
+
+/**
+ * Drawable part of a top-level popup on the main canvas. The embedded screen has no desktop
+ * around the main window, so a popup that does not fit inside the canvas is not drawn at all
+ * (rather than as a clipped fragment without its frame).
+ */
+export function popupVisibleRect(emu: Emulator, wnd: WindowInfo, origin: { x: number; y: number }): { x: number; y: number; w: number; h: number } {
+  const cw = emu.canvas?.width ?? 0, ch = emu.canvas?.height ?? 0;
+  const inside = origin.x >= 0 && origin.y >= 0 && origin.x + wnd.width <= cw && origin.y + wnd.height <= ch;
+  return inside ? { x: 0, y: 0, w: wnd.width, h: wnd.height } : { x: 0, y: 0, w: 0, h: 0 };
+}

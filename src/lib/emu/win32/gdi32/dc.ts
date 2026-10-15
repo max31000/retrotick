@@ -111,16 +111,6 @@ export function registerDC(emu: Emulator): void {
   });
   gdi32.register('GetLayout', 1, () => 0); // LTR layout
   gdi32.register('SetLayout', 2, () => 0);
-  gdi32.register('SetViewportOrgEx', 4, () => 1);
-  gdi32.register('SetWindowOrgEx', 4, () => 1);
-  gdi32.register('OffsetViewportOrgEx', 4, () => 1);
-  gdi32.register('OffsetWindowOrgEx', 4, () => 1);
-
-  gdi32.register('GetWindowOrgEx', 2, () => {
-    const ptr = emu.readArg(1);
-    if (ptr) { emu.memory.writeU32(ptr, 0); emu.memory.writeU32(ptr + 4, 0); }
-    return 1;
-  });
 
   gdi32.register('GetDCOrgEx', 2, () => {
     const ptr = emu.readArg(1);
@@ -129,12 +119,6 @@ export function registerDC(emu: Emulator): void {
   });
 
   gdi32.register('GetCurrentPositionEx', 2, () => {
-    const ptr = emu.readArg(1);
-    if (ptr) { emu.memory.writeU32(ptr, 0); emu.memory.writeU32(ptr + 4, 0); }
-    return 1;
-  });
-
-  gdi32.register('GetViewportOrgEx', 2, () => {
     const ptr = emu.readArg(1);
     if (ptr) { emu.memory.writeU32(ptr, 0); emu.memory.writeU32(ptr + 4, 0); }
     return 1;

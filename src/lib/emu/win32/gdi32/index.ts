@@ -14,6 +14,7 @@ import { registerPathXform } from './path-xform';
 import { registerDrawShapes } from './draw-shapes';
 import { registerFontEnum } from './font-enum';
 import { registerDibBits } from './dib-bits';
+import { registerViewport } from './viewport';
 
 export type { DCInfo, BitmapInfo, PenInfo, BrushInfo } from './types';
 
@@ -33,4 +34,5 @@ export function registerGdi32(emu: Emulator): void {
   registerDrawShapes(emu);
   registerFontEnum(emu);
   registerDibBits(emu);
+  registerViewport(emu);
 }

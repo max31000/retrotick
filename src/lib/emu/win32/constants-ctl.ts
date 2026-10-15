@@ -108,3 +108,15 @@ export const SCROLL_MIN_THUMB = 8;
 
 // --- Common dialog extended errors (cderr.h) ---
 export const PDERR_NODEFAULTPRN = 0x1008;
+
+// --- Edit control styles / painting (winuser.h) ---
+export const ES_CENTER = 0x0001;
+export const ES_RIGHT = 0x0002;
+export const ES_MULTILINE = 0x0004;
+export const ES_AUTOHSCROLL = 0x0080;
+export const ES_READONLY = 0x0800;
+/** Left/right text margin of the built-in edit control when painted into a DC */
+export const EDIT_MARGIN = 1;
+/** FillRect-style brushes: system colour index + 1 up to COLOR_MAX_SYSBRUSH */
+export const COLOR_MAX_SYSBRUSH = 30;
+export const WM_PRINTCLIENT = 0x0318;

@@ -386,6 +386,9 @@ export function renderControlOverlay(
         // Notify parent of EN_CHANGE
         const EN_CHANGE = 0x0300;
         const WM_COMMAND = 0x0111;
+        // Like the real edit control: EN_UPDATE (about to display) then EN_CHANGE
+        const EN_UPDATE = 0x0400;
+        emu.postMessage(wnd.parent, WM_COMMAND, ((EN_UPDATE << 16) | (wnd.controlId || 0)) >>> 0, ctrl.childHwnd);
         const wParam = ((EN_CHANGE << 16) | (wnd.controlId || 0)) >>> 0;
         emu.postMessage(wnd.parent, WM_COMMAND, wParam, ctrl.childHwnd);
       }
@@ -422,6 +425,9 @@ export function renderControlOverlay(
         wnd.title = text;
         const EN_CHANGE = 0x0300;
         const WM_COMMAND = 0x0111;
+        // Like the real edit control: EN_UPDATE (about to display) then EN_CHANGE
+        const EN_UPDATE = 0x0400;
+        emu.postMessage(wnd.parent, WM_COMMAND, ((EN_UPDATE << 16) | (wnd.controlId || 0)) >>> 0, ctrl.childHwnd);
         const wParam = ((EN_CHANGE << 16) | (wnd.controlId || 0)) >>> 0;
         emu.postMessage(wnd.parent, WM_COMMAND, wParam, ctrl.childHwnd);
       }

@@ -6,7 +6,7 @@ import { decodeDib } from '../pe/decode-dib';
 import { rvaToFileOffset } from '../pe/read';
 import { resetDCLayers } from './win32/gdi32/dc-clip';
 import { getClientSize, getNonClientMetrics } from './win32/user32/_helpers';
-import { visibleWindowRect, popupCanvasOrigin } from './emu-window-clip';
+import { visibleWindowRect, popupCanvasOrigin, popupVisibleRect } from './emu-window-clip';
 import { emuFindResourceEntryForModule } from './emu-load';
 
 // Track DCs that have canvas state saved (child window translate)
@@ -164,8 +164,10 @@ export function getWindowDC(emu: Emulator, hwnd: number): number {
       }
       dc.ctx.save();
       dc.ctx.setTransform(1, 0, 0, 1, origin.x, origin.y + ccsYOffset);
+      // A fresh GetDC starts with default window/viewport origins
+      dc.viewportOrgX = dc.viewportOrgY = dc.windowOrgX = dc.windowOrgY = 0;
       dc.ctx.beginPath();
-      const vis = isPopup ? { x: 0, y: 0, w: wnd.width, h: wnd.height } : visibleWindowRect(emu, hwnd, origin);
+      const vis = isPopup ? popupVisibleRect(emu, wnd, origin) : visibleWindowRect(emu, hwnd, origin);
       dc.ctx.rect(vis.x, vis.y - ccsYOffset, vis.w, vis.h);
       dc.ctx.clip();
       childDCSet.add(existing);
@@ -230,7 +232,7 @@ export function getWindowDC(emu: Emulator, hwnd: number): number {
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, origin.x, origin.y + ccsYOffset);
     ctx.beginPath();
-    const vis = isPopup ? { x: 0, y: 0, w: wnd.width, h: wnd.height } : visibleWindowRect(emu, hwnd, origin);
+    const vis = isPopup ? popupVisibleRect(emu, wnd, origin) : visibleWindowRect(emu, hwnd, origin);
     ctx.rect(vis.x, vis.y - ccsYOffset, vis.w, vis.h);
     ctx.clip();
     // Fill CCS toolbar background — the DC is shifted down so the top strip

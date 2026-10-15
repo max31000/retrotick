@@ -64,6 +64,9 @@ export function registerSelect(emu: Emulator): void {
         // Resizing the canvas reset its state stack: re-apply the clip region
         dc.layers = [];
         if (dc.clipRgn) setClipRegion(dc, dc.clipRgn);
+        // ...and the window/viewport origin offset
+        const ox = (dc.viewportOrgX ?? 0) - (dc.windowOrgX ?? 0), oy = (dc.viewportOrgY ?? 0) - (dc.windowOrgY ?? 0);
+        if (ox || oy) dc.ctx.translate(ox, oy);
         return old;
       }
     }

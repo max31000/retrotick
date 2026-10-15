@@ -4,6 +4,8 @@ import { writeMsgStruct, isCharMessage, convertCharParam } from './_helpers';
 import { encodeMBCS } from '../../memory';
 import { emuCompleteThunk } from '../../emu-exec';
 import { getNextCascadePos } from '../../emulator';
+import { WM_PRINTCLIENT } from '../constants-ctl';
+import { paintEditInto } from './edit-print';
 import { handleToolbarMessage } from './toolbar';
 import { handleStatusBarMessage } from './statusbar';
 import { validateWindow } from './update-region';
@@ -361,6 +363,11 @@ export function registerMessage(emu: Emulator): void {
 
     // MDIClient message handling
     const cls = (wnd.classInfo?.baseClassName || wnd.classInfo?.className || '').toUpperCase();
+    // An edit asked to paint into a given DC (WM_PAINT with wParam = HDC, WM_PRINTCLIENT)
+    if (cls === 'EDIT' && wParam && (message === WM_PAINT || message === WM_PRINTCLIENT)) {
+      paintEditInto(emu, hwnd, wnd, wParam);
+      return 0;
+    }
     if (cls === 'MDICLIENT') {
       if (message === WM_MDICREATE && lParam) {
         // MDICREATESTRUCT: szClass(4), szTitle(4), hOwner(4), x(4), y(4), cx(4), cy(4), style(4), lParam(4)
