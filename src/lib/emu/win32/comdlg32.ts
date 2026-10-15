@@ -1,6 +1,7 @@
 import type { Emulator } from '../emulator';
 import type { WindowInfo } from './user32/types';
 import { emuCompleteThunk } from '../emu-exec';
+import { CC_RGBINIT, CC_FULLOPEN, CC_PREVENTFULLOPEN, CHOOSECOLOR_RGBRESULT, CHOOSECOLOR_CUSTCOLORS, CHOOSECOLOR_FLAGS, CUSTOM_COLOR_COUNT } from './color-dialog-data';
 
 export function registerComdlg32(emu: Emulator): void {
   const comdlg32 = emu.registerDll('COMDLG32.DLL');
@@ -147,6 +148,35 @@ export function registerComdlg32(emu: Emulator): void {
   comdlg32.register('GetOpenFileNameW', 1, () => doGetOpenFileName(true));
   comdlg32.register('GetSaveFileNameW', 1, () => doGetSaveFileName(true));
   comdlg32.register('ChooseFontW', 1, () => 0);
+
+  // ChooseColor(LPCHOOSECOLOR): modal colour picker in the UI; TRUE + rgbResult on OK
+  const chooseColor = (): number | undefined => {
+    const p = emu.readArg(0);
+    if (!p || !emu.onShowCommonDialog) return 0;
+    const flags = emu.memory.readU32(p + CHOOSECOLOR_FLAGS);
+    const custPtr = emu.memory.readU32(p + CHOOSECOLOR_CUSTCOLORS);
+    const custom: number[] = [];
+    for (let i = 0; i < CUSTOM_COLOR_COUNT; i++) custom.push(custPtr ? emu.memory.readU32(custPtr + i * 4) & 0xFFFFFF : 0xFFFFFF);
+    const stackBytes = emu._currentThunkStackBytes;
+    emu.waitingForMessage = true;
+    emu.onShowCommonDialog({
+      type: 'color',
+      color: flags & CC_RGBINIT ? emu.memory.readU32(p + CHOOSECOLOR_RGBRESULT) & 0xFFFFFF : 0,
+      custom, fullOpen: !!(flags & CC_FULLOPEN), preventFullOpen: !!(flags & CC_PREVENTFULLOPEN), lcid: emu.configuredLcid,
+      onResult: (result) => {
+        if (result) {
+          emu.memory.writeU32(p + CHOOSECOLOR_RGBRESULT, result.color);
+          if (custPtr) result.custom.forEach((c, i) => emu.memory.writeU32(custPtr + i * 4, c));
+        }
+        emu.waitingForMessage = false;
+        emuCompleteThunk(emu, result ? 1 : 0, stackBytes);
+        if (emu.running && !emu.halted) requestAnimationFrame(emu.tick);
+      },
+    });
+    return undefined;
+  };
+  comdlg32.register('ChooseColorA', 1, chooseColor);
+  comdlg32.register('ChooseColorW', 1, chooseColor);
   // FINDREPLACEW struct offsets (Win32)
   const FR_lStructSize      = 0x00; // DWORD
   const FR_hwndOwner        = 0x04; // HWND

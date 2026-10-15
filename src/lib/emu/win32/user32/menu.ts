@@ -405,7 +405,7 @@ export function registerMenu(emu: Emulator): void {
       // Sync to legacy menuItems for React UI
       if (emu.menuItems) {
         const legacy = byPos
-          ? findLegacyByPos(emu.menuItems, uIDCheckItem)
+          ? findLegacyByPosIn(emu, hMenu, uIDCheckItem)
           : findLegacyById(emu.menuItems, uIDCheckItem);
         if (legacy) legacy.isChecked = !!(uCheck & MF_CHECKED);
       }
@@ -441,7 +441,7 @@ export function registerMenu(emu: Emulator): void {
       // Sync to legacy menuItems for React UI
       if (emu.menuItems) {
         const legacy = byPos
-          ? findLegacyByPos(emu.menuItems, uIDEnableItem)
+          ? findLegacyByPosIn(emu, hMenu, uIDEnableItem)
           : findLegacyById(emu.menuItems, uIDEnableItem);
         if (legacy) legacy.isGrayed = !!(uEnable & (MF_GRAYED | MF_DISABLED));
       }
@@ -480,7 +480,7 @@ export function registerMenu(emu: Emulator): void {
       if (emu.menuItems) {
         for (let i = idFirst; i <= idLast; i++) {
           const legacy = byPos
-            ? findLegacyByPos(emu.menuItems, i)
+            ? findLegacyByPosIn(emu, hMenu, i)
             : findLegacyById(emu.menuItems, i);
           if (legacy) legacy.isChecked = (i === idCheck);
         }
@@ -813,4 +813,24 @@ function findLegacyById(items: MenuItem[], id: number): MenuItem | null {
 
 function findLegacyByPos(items: MenuItem[], pos: number): MenuItem | null {
   return pos < items.length ? items[pos] : null;
+}
+
+/** Legacy (UI) item at `pos` of menu `hMenu`: the UI tree mirrors the main window's menu bar,
+ *  so locate hMenu's position in that handle tree (a popup's positions are not the bar's). */
+function findLegacyByPosIn(emu: Emulator, hMenu: number, pos: number): MenuItem | null {
+  const main = emu.handles.get<{ hMenu?: number }>(emu.mainWindow);
+  const walk = (h: number, items: MenuItem[], depth: number): MenuItem[] | null => {
+    if (h === hMenu) return items;
+    const data = getMenuData(emu, h);
+    if (!data || depth > 16) return null;
+    for (let i = 0; i < data.items.length; i++) {
+      const sub = data.items[i].hSubMenu, children = items[i]?.children;
+      if (!sub || !children) continue;
+      const r = walk(sub, children, depth + 1);
+      if (r) return r;
+    }
+    return null;
+  };
+  const items = emu.menuItems && main?.hMenu ? walk(main.hMenu, emu.menuItems, 0) : null;
+  return items ? findLegacyByPos(items, pos) : null;
 }

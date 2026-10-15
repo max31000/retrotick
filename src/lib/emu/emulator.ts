@@ -58,7 +58,9 @@ export type CommonDialogRequest =
   | { type: 'file-open'; filter?: string; initialDir?: string; onResult: (result: { path: string; data?: ArrayBuffer } | null) => void }
   | { type: 'file-save'; filter?: string; initialDir?: string; defaultName?: string; onResult: (result: { path: string } | null) => void }
   | { type: 'find'; editHwnd: number; onClose: () => void }
-  | { type: 'find-replace'; editHwnd: number; onClose: () => void };
+  | { type: 'find-replace'; editHwnd: number; onClose: () => void }
+  | { type: 'color'; color: number; custom: number[]; fullOpen: boolean; preventFullOpen: boolean; lcid: number;
+      onResult: (result: { color: number; custom: number[] } | null) => void };
 
 export interface DialogInfo {
   title: string;

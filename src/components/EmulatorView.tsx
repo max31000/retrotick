@@ -5,6 +5,7 @@ import { Emulator } from '../lib/emu/emulator';
 import type { DialogInfo, ControlOverlay, ProcessRegistry, CommonDialogRequest } from '../lib/emu/emulator';
 import type { WindowInfo } from '../lib/emu/win32/user32/index';
 import { WM_MOUSEMOVE, WM_COMMAND, WM_SYSCOMMAND, WM_SIZE, WM_GETMINMAXINFO, WM_KEYDOWN, WM_KEYUP, WM_CHAR, WM_INITMENU, WM_INITMENUPOPUP, SC_MINIMIZE, SC_MAXIMIZE, SC_RESTORE, SC_CLOSE } from '../lib/emu/win32/types';
+import { ColorDialog } from './win2k/ColorDialog';
 import { mkFlagsFromButtons, diffButtons, buttonMessage, POINTER_BUTTON_TO_BIT, BUTTON_BIT_LEFT } from '../lib/emu/mouse-buttons';
 import { scrollBarPress, scrollBarMove, scrollBarRelease } from '../lib/emu/win32/user32/nc-scroll';
 import { OrderedInputQueue } from './ordered-input-queue';
@@ -1634,6 +1635,11 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
             focused={focused}
           />
         )}
+        {commonDialog?.type === 'color' && (
+          <ColorDialog color={commonDialog.color} custom={commonDialog.custom} fullOpen={commonDialog.fullOpen}
+            preventFullOpen={commonDialog.preventFullOpen} lcid={commonDialog.lcid} focused={focused}
+            onResult={(result) => { commonDialog.onResult(result); setCommonDialog(null); }} />
+        )}
         {(commonDialog?.type === 'file-open' || commonDialog?.type === 'file-save') && emuRef.current && (
           <FileDialog
             mode={commonDialog.type === 'file-open' ? 'open' : 'save'}
@@ -1795,6 +1801,11 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
           focused={focused}
           parentRef={desktopRef}
         />
+      )}
+      {commonDialog?.type === 'color' && (
+        <ColorDialog color={commonDialog.color} custom={commonDialog.custom} fullOpen={commonDialog.fullOpen}
+          preventFullOpen={commonDialog.preventFullOpen} lcid={commonDialog.lcid} focused={focused} parentRef={desktopRef}
+          onResult={(result) => { commonDialog.onResult(result); setCommonDialog(null); }} />
       )}
       {(commonDialog?.type === 'file-open' || commonDialog?.type === 'file-save') && emuRef.current && (
         <FileDialog
