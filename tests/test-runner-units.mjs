@@ -6,6 +6,7 @@ import { SYS_COLORS, COLOR_BTNFACE } from '../src/lib/emu/win32/types.ts';
 import { toFixedCoords } from '../src/components/win2k/fixed-origin.ts';
 import { clampVolume, createMasterGain } from '../src/runner/audio.ts';
 import { runPollHook, isInputMessage } from '../src/lib/emu/hooks.ts';
+import { releaseHeldKeys } from '../src/lib/emu/release-keys.ts';
 
 let fail = 0;
 const eq = (name, got, want) => {
@@ -90,6 +91,17 @@ eq('no AudioContext: volume tracked, no node', [g3.volume, g3.node], [0.6, null]
   console.warn = warn;
   eq('poll errors are contained', true, true);
   eq('input messages', [0x100, 0x102, 0x201, 0x20A, 0x111, 0x0F, 0x113].map(isInputMessage), [true, true, true, true, true, false, false]);
+}
+
+// --- releaseHeldKeys: WM_KEYUP for held keys, key state tables cleared
+{
+  const posted = [];
+  const emu = { keyStates: new Set([0x10, 0x41]), msgKeyState: new Set([0x10]), focusedWindow: 0, mainWindow: 7,
+    postMessage: (h, m, w) => posted.push([h, m, w]) };
+  eq('released keys', releaseHeldKeys(emu), [0x10, 0x41]);
+  eq('WM_KEYUP posted to the main window', posted, [[7, 0x101, 0x10], [7, 0x101, 0x41]]);
+  eq('key state cleared', [emu.keyStates.size, emu.msgKeyState], [0, null]);
+  eq('nothing held: nothing posted', releaseHeldKeys(emu), []);
 }
 
 console.log(fail ? `[TEST] FAIL (${fail})` : '[TEST] SUCCESS');

@@ -19,7 +19,7 @@ import { installKeyboardGuard } from './keyboard';
 import { createMasterGain } from './audio';
 import type { GameHandle, MountOptions } from './types';
 import { decodeRegValue } from '../lib/emu/hooks';
-import { WM_KEYUP } from '../lib/emu/win32/types';
+import { releaseHeldKeys } from '../lib/emu/release-keys';
 
 const DEFAULT_LCID = 0x419;
 /** DOM input swallowed inside the runner root while `setInputBlocked(true)` */
@@ -146,6 +146,16 @@ export async function mountGame(host: HTMLElement, opts: MountOptions): Promise<
     if (e.cancelable) e.preventDefault();
   };
   for (const type of BLOCKABLE_EVENTS) root.addEventListener(type, swallowInput, { capture: true, passive: false });
+  // Keys released while the page has no focus never reach us: release them for the program
+  const releaseKeys = () => {
+    if (emulator) releaseHeldKeys(emulator);
+  };
+  const onVisibility = () => {
+    if (doc.visibilityState === 'hidden') releaseKeys();
+  };
+  const win = doc.defaultView;
+  win?.addEventListener('blur', releaseKeys);
+  doc.addEventListener('visibilitychange', onVisibility);
   let exited = false;
   let unmounted = false;
   const onExit = () => {
@@ -160,6 +170,8 @@ export async function mountGame(host: HTMLElement, opts: MountOptions): Promise<
       unmounted = true;
       render(null, root);
       for (const type of BLOCKABLE_EVENTS) root.removeEventListener(type, swallowInput, { capture: true });
+      win?.removeEventListener('blur', releaseKeys);
+      doc.removeEventListener('visibilitychange', onVisibility);
       root.remove();
       removeKeyboardGuard();
       restoreColors();
@@ -181,12 +193,7 @@ export async function mountGame(host: HTMLElement, opts: MountOptions): Promise<
       const emu = emulator;
       if (!emu) return;
       emu.inputBlocked = blocked;
-      if (blocked) {
-        // Release keys held when the block started, so the program sees no stuck keys
-        const target = emu.focusedWindow || emu.mainWindow;
-        for (const vk of emu.keyStates) if (target) emu.postMessage(target, WM_KEYUP, vk, 1 | (3 << 30));
-        emu.keyStates.clear();
-      }
+      if (blocked) releaseHeldKeys(emu);
     },
     get inputBlocked() { return inputBlocked; },
     answerMessageBox(id, result) {

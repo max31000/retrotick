@@ -145,11 +145,14 @@ export function decodeRegValue(type: number, data: Uint8Array, wide: boolean): n
  * when no hook is set.
  */
 export function installApiObservers(emu: Emulator): void {
-  const wrap = (key: string, after: (args: number[]) => void, nArgs: number) => {
+  type Observed = 'textDraw' | 'windowText' | 'registryWrite';
+  const wrap = (key: string, hook: Observed, after: (args: number[]) => void, nArgs: number) => {
     const def = emu.apiDefs.get(key);
     if (!def) return;
     const inner = def.handler;
     def.handler = (e: Emulator) => {
+      // No hook for this API: no argument reads, no allocation
+      if (!e.hooks[hook]) return inner(e);
       const args: number[] = [];
       for (let i = 0; i < nArgs; i++) args.push(e.readArg(i));
       const r = inner(e);
@@ -177,14 +180,14 @@ export function installApiObservers(emu: Emulator): void {
   const rectOrigin = (p: number) => (p ? { x: emu.memory.readI32(p), y: emu.memory.readI32(p + 4) } : { x: 0, y: 0 });
 
   // TextOut(hdc, x, y, lpString, c)
-  wrap('GDI32.DLL:TextOutW', (a) => { if (emu.hooks.textDraw) text('TextOut', a[0], readW(a[3], a[4] | 0), a[1] | 0, a[2] | 0); }, 5);
-  wrap('GDI32.DLL:TextOutA', (a) => { if (emu.hooks.textDraw) text('TextOut', a[0], readA(a[3], a[4] | 0), a[1] | 0, a[2] | 0); }, 5);
+  wrap('GDI32.DLL:TextOutW', 'textDraw', (a) => { if (emu.hooks.textDraw) text('TextOut', a[0], readW(a[3], a[4] | 0), a[1] | 0, a[2] | 0); }, 5);
+  wrap('GDI32.DLL:TextOutA', 'textDraw', (a) => { if (emu.hooks.textDraw) text('TextOut', a[0], readA(a[3], a[4] | 0), a[1] | 0, a[2] | 0); }, 5);
   // ExtTextOut(hdc, x, y, options, lprect, lpString, c, lpDx)
-  wrap('GDI32.DLL:ExtTextOutW', (a) => { if (emu.hooks.textDraw) text('ExtTextOut', a[0], readW(a[5], a[6] | 0), a[1] | 0, a[2] | 0); }, 8);
-  wrap('GDI32.DLL:ExtTextOutA', (a) => { if (emu.hooks.textDraw) text('ExtTextOut', a[0], readA(a[5], a[6] | 0), a[1] | 0, a[2] | 0); }, 8);
+  wrap('GDI32.DLL:ExtTextOutW', 'textDraw', (a) => { if (emu.hooks.textDraw) text('ExtTextOut', a[0], readW(a[5], a[6] | 0), a[1] | 0, a[2] | 0); }, 8);
+  wrap('GDI32.DLL:ExtTextOutA', 'textDraw', (a) => { if (emu.hooks.textDraw) text('ExtTextOut', a[0], readA(a[5], a[6] | 0), a[1] | 0, a[2] | 0); }, 8);
   // DrawText(hdc, lpString, c, lprc, format) / DrawTextEx(…, lpdtp)
   for (const [key, wide] of [['USER32.DLL:DrawTextW', true], ['USER32.DLL:DrawTextExW', true], ['USER32.DLL:DrawTextA', false]] as const) {
-    wrap(key, (a) => {
+    wrap(key, 'textDraw', (a) => {
       if (!emu.hooks.textDraw) return;
       const o = rectOrigin(a[3]);
       text('DrawText', a[0], wide ? readW(a[1], a[2] | 0) : readA(a[1], a[2] | 0), o.x, o.y);
@@ -192,14 +195,14 @@ export function installApiObservers(emu: Emulator): void {
   }
   // SetWindowText(hwnd, lpString)
   for (const [key, wide] of [['USER32.DLL:SetWindowTextW', true], ['USER32.DLL:SetWindowTextA', false]] as const) {
-    wrap(key, (a) => {
+    wrap(key, 'windowText', (a) => {
       const h = emu.hooks.windowText;
       if (h && a[1]) h({ hwnd: a[0], text: wide ? readW(a[1], -1) : readA(a[1], -1), isMain: a[0] === emu.mainWindow });
     }, 2);
   }
   // RegSetValueEx(hKey, lpValueName, Reserved, dwType, lpData, cbData)
   for (const [key, wide] of [['ADVAPI32.DLL:RegSetValueExW', true], ['ADVAPI32.DLL:RegSetValueExA', false]] as const) {
-    wrap(key, (a) => {
+    wrap(key, 'registryWrite', (a) => {
       const h = emu.hooks.registryWrite;
       const path = emu.registryStore?.pathOf(a[0]);
       if (!h || path == null || !a[4]) return;

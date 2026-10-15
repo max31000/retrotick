@@ -87,7 +87,7 @@ handle.setInputBlocked(true);                  // host modal above the game: no 
 | `windowText(w)` | after SetWindowText |
 | `registryWrite(r)` | after RegSetValueEx |
 | `poll()` | after the first emulator run following host input (key, mouse, menu/accelerator command), otherwise at most every `pollIntervalMs` (default 100) while the program runs; an idle program is not polled. Errors are caught and logged |
-| `setInputBlocked(b)` | all DOM input inside the runner root (canvas, menu bar, dialogs) is swallowed and nothing is posted to the program; keys held at that moment get WM_KEYUP; timers, audio and `answerMessageBox` keep working. `inputBlocked` reads it back |
+| `setInputBlocked(b)` | all DOM input inside the runner root (canvas, menu bar, dialogs) is swallowed and nothing is posted to the program; keys held at that moment get WM_KEYUP (as on window blur and when the tab is hidden); timers, audio and `answerMessageBox` keep working. `inputBlocked` reads it back |
 | `peek(addr, len)` | read-only copy of emulated memory (empty before start) |
 | `readRegistry(path, name)` | current value: REG_DWORD → number, REG_SZ → string (UTF-16), other → bytes; null if absent |
 
