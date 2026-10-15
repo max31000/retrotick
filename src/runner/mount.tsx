@@ -18,6 +18,7 @@ import { applyLunaSysColors, lunaThemeFor } from './luna-system';
 import { installKeyboardGuard } from './keyboard';
 import { createMasterGain } from './audio';
 import type { GameHandle, MountOptions } from './types';
+import { decodeRegValue } from '../lib/emu/hooks';
 
 const DEFAULT_LCID = 0x419;
 const FALLBACK_SCREEN = { width: 1024, height: 768 };
@@ -158,6 +159,18 @@ export async function mountGame(host: HTMLElement, opts: MountOptions): Promise<
     setVolume(volume: number) { master.setVolume(volume); },
     get volume() { return master.volume; },
     get emulator() { return emulator; },
+    answerMessageBox(id, result) {
+      emulator?.dismissMessageBox(id, result);
+    },
+    peek(address, length) {
+      const out = new Uint8Array(emulator ? Math.max(0, length) : 0);
+      for (let i = 0; i < out.length; i++) out[i] = emulator!.memory.readU8((address + i) >>> 0);
+      return out;
+    },
+    readRegistry(path, name) {
+      const v = emulator?.registryStore?.getValueByPath(path, name);
+      return v ? decodeRegValue(v.type, v.data, true) : null;
+    },
   };
 
   await new Promise<void>((resolve) => {
@@ -179,6 +192,7 @@ export async function mountGame(host: HTMLElement, opts: MountOptions): Promise<
           onEmulator={(emu) => {
             emulator = emu;
             if (master.node) emu.audioOutput = master.node;
+            if (opts.hooks) emu.hooks = opts.hooks;
             resolve();
           }}
         />

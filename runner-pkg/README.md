@@ -50,6 +50,35 @@ Notes: the Luna system colours are applied to the emulator's global colour table
 game is mounted (one game per page at a time). Modal dialogs are `position: fixed`, so don't
 put the host inside a CSS `transform` (use `zoom` or scale the canvas instead).
 
+## Hooks (observe / answer the program) — prototype
+
+Generic extension points; what a dialog id or a drawn string *means* is up to the host.
+They are installed before the program starts.
+
+```ts
+const handle = await mountGame(host, {
+  ...,
+  hooks: {
+    dialogCreate: (d) => (d.template === 700 ? { result: 1 } : undefined),     // skip a dialog
+    dialogInit: (d) => (d.template === 600                                     // answer it unseen
+      ? { press: 100, values: { 602: userName } } : undefined),
+    messageBox: (m) => (m.text === 'Сдать заново?' ? { hidden: true } : undefined),
+    textDraw: (t) => { /* TextOut / ExtTextOut / DrawText: { hwnd, text, x, y } */ },
+    windowText: (w) => { /* SetWindowText */ },
+    registryWrite: (r) => { /* RegSetValueEx: { path, name, type, value } */ },
+  },
+});
+handle.answerMessageBox(id, 6 /* IDYES */);   // for { hidden: true }
+handle.peek(0x0100579c, 4);                    // read-only memory copy
+handle.readRegistry('HKEY_CURRENT_USER\\Software\\Microsoft\\Solitaire', 'Параметры');
+```
+
+`dialogInit` receives `controls` (texts by id) and `checked` (button states) after
+WM_INITDIALOG; `DialogPress` may also set `check` states and `clicks` (WM_COMMAND to the
+dialog procedure, e.g. radio buttons) before the final `press`. Only modal dialogs
+(DialogBoxParam/DialogBoxIndirectParam) are covered; MFC `DoModal` uses CreateDialogIndirect
+and is not hooked yet. Example adapters: `tests/test-xp-score-capture.mjs`.
+
 ## LunaFrame (frame + menu bar for pages that draw their own window)
 
 A light entry with no emulator code:

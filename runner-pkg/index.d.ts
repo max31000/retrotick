@@ -3,6 +3,7 @@
 import type { LunaFrameExport, MountGameFn, RegisterXpFontsFn } from './dist/types';
 
 export type { MountOptions, GameHandle, RunnerFonts, LunaFrameExport, MountGameFn, RegisterXpFontsFn } from './dist/types';
+export type { GameHooks, DialogCreateInfo, DialogInitInfo, DialogPress, MessageBoxInfo, RegistryWriteInfo, TextDrawInfo, WindowTextInfo } from './dist/types';
 
 export declare const mountGame: MountGameFn;
 export declare const LunaFrame: LunaFrameExport;

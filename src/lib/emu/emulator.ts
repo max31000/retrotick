@@ -26,6 +26,7 @@ import { emuTick, emuCallWndProc, emuCallWndProc16, emuCallNative, emuCallCallba
 import { emuTickARM, emuCallWndProcARM } from './emu-exec-arm';
 import { Thread } from './thread';
 import { DoubleClickTracker } from './mouse-buttons';
+import type { EmulatorHooks } from './hooks';
 import { DEFAULT_DOUBLE_CLICK_TIME, DEFAULT_DOUBLE_CLICK_CX, DEFAULT_DOUBLE_CLICK_CY } from './win32/types';
 
 export { fillTextBitmap } from './emu-render';
@@ -586,6 +587,8 @@ export class Emulator {
   running = false;
   halted = false;
   traceApi = false;
+  /** Host observation/automation hooks (see hooks.ts) */
+  hooks: EmulatorHooks = {};
   /** Mouse settings (GetDoubleClickTime / SM_CXDOUBLECLK / SM_CYDOUBLECLK) */
   doubleClickTime = DEFAULT_DOUBLE_CLICK_TIME;
   doubleClickCx = DEFAULT_DOUBLE_CLICK_CX;
@@ -987,6 +990,14 @@ export class Emulator {
   showMessageBox(caption: string, text: string, type: number, onDismiss: (result: number) => void): void {
     const id = this._nextMessageBoxId++;
     this.messageBoxes.push({ id, caption, text, type, onDismiss });
+    const answer = this.hooks.messageBox?.({ id, caption, text, type });
+    if (answer && 'result' in answer) {
+      // Answer once the calling thunk has suspended (onDismiss resumes it)
+      const result = answer.result;
+      setTimeout(() => this.dismissMessageBox(id, result), 0);
+      return;
+    }
+    if (answer?.hidden) return;
     this.onShowMessageBox?.(id, caption, text, type);
   }
 

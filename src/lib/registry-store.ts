@@ -56,6 +56,16 @@ export class RegistryStore {
     return key;
   }
 
+  /** Value by full key path (e.g. `HKEY_CURRENT_USER\Software\X`, case-insensitive), or null. */
+  getValueByPath(path: string, name: string): RegistryValue | null {
+    return this.keys.get(this.normalize(path))?.values.get(name.toLowerCase()) ?? null;
+  }
+
+  /** Full (normalised, lower-case) path of an open key handle or predefined root, or null. */
+  pathOf(hKey: number): string | null {
+    return this.resolveParent(hKey);
+  }
+
   private resolveParent(hKey: number): string | null {
     const root = ROOT_HANDLES.get(hKey >>> 0);
     if (root) return root;
