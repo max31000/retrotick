@@ -13,6 +13,7 @@ import { registerClipApi } from './clip-api';
 import { registerPathXform } from './path-xform';
 import { registerDrawShapes } from './draw-shapes';
 import { registerFontEnum } from './font-enum';
+import { registerDibBits } from './dib-bits';
 
 export type { DCInfo, BitmapInfo, PenInfo, BrushInfo } from './types';
 
@@ -31,4 +32,5 @@ export function registerGdi32(emu: Emulator): void {
   registerPathXform(emu);
   registerDrawShapes(emu);
   registerFontEnum(emu);
+  registerDibBits(emu);
 }

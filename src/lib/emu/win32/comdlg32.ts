@@ -1,6 +1,7 @@
 import type { Emulator } from '../emulator';
 import type { WindowInfo } from './user32/types';
 import { emuCompleteThunk } from '../emu-exec';
+import { PDERR_NODEFAULTPRN } from './constants-ctl';
 import { CC_RGBINIT, CC_FULLOPEN, CC_PREVENTFULLOPEN, CHOOSECOLOR_RGBRESULT, CHOOSECOLOR_CUSTCOLORS, CHOOSECOLOR_FLAGS, CUSTOM_COLOR_COUNT } from './color-dialog-data';
 
 export function registerComdlg32(emu: Emulator): void {
@@ -303,5 +304,10 @@ export function registerComdlg32(emu: Emulator): void {
     return 0;
   });
   comdlg32.register('PageSetupDlgW', 1, () => 0);
-  comdlg32.register('CommDlgExtendedError', 0, () => 0);
+  // No printers are installed: PrintDlg fails like Windows without a default printer
+  let extendedError = 0;
+  const printDlg = () => { extendedError = PDERR_NODEFAULTPRN; return 0; };
+  comdlg32.register('PrintDlgA', 1, printDlg);
+  comdlg32.register('PrintDlgW', 1, printDlg);
+  comdlg32.register('CommDlgExtendedError', 0, () => extendedError);
 }

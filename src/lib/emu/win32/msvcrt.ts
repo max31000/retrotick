@@ -4,8 +4,11 @@ import { emuCompleteThunk } from '../emu-exec';
 import { fpuPush } from '../x86/fpu';
 import { raiseSehException } from './kernel32/process';
 
+import { registerMsvcrtWide } from './msvcrt-wide';
+
 export function registerMsvcrt(emu: Emulator): void {
   const msvcrt = emu.registerDll('MSVCRT.DLL');
+  registerMsvcrtWide(emu);
 
   const readDoubleArg = (i: number): number => {
     const lo = emu.readArg(i);

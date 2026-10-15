@@ -114,3 +114,10 @@ export const ENUM_TM_SIZE_W = 100;
 /** ENUMLOGFONTEXA / ENUMLOGFONTEXW */
 export const ENUMLOGFONTEX_SIZE_A = 188;
 export const ENUMLOGFONTEX_SIZE_W = 348;
+
+// --- DIBs ---
+export const BITMAPINFOHEADER_SIZE = 40;
+/** Colour depth of the emulated display (GetDeviceCaps BITSPIXEL) */
+export const SCREEN_BPP = 32;
+/** Levels per channel of the 8 bpp halftone colour cube (6x6x6) */
+export const HALFTONE_LEVELS = 6;

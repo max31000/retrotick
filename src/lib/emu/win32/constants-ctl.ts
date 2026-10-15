@@ -105,3 +105,6 @@ export const SIF_POS = 0x0004;
 export const SIF_DISABLENOSCROLL = 0x0008;
 export const SIF_TRACKPOS = 0x0010;
 export const SCROLL_MIN_THUMB = 8;
+
+// --- Common dialog extended errors (cderr.h) ---
+export const PDERR_NODEFAULTPRN = 0x1008;

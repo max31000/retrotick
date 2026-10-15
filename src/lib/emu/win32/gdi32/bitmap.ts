@@ -180,7 +180,6 @@ export function registerBitmap(emu: Emulator): void {
 
   gdi32.register('GetObjectW', 3, emu.apiDefs.get('GDI32.DLL:GetObjectA')?.handler!);
 
-  gdi32.register('GetDIBits', 5, () => 0);
 
   gdi32.register('SetDIBitsToDevice', 12, () => {
     const hdc = emu.readArg(0);
