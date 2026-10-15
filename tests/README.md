@@ -29,7 +29,8 @@ Each test file:
 `test-xp-*.mjs` run original XP games headlessly via `tests/lib/headless-harness.mjs`.
 The binaries are not part of the repository; point `BLISS_ASSETS` (or the first CLI
 argument) at a directory containing them (`sol.exe`, `winmine.exe`, `freecell.exe`,
-`spider.exe`, `mshearts.exe`, `cards.dll`, `mfc42u.dll`, `nddeapi.dll`):
+`spider.exe`, `mshearts.exe`, `mspaint.exe`, `cards.dll`, `mfc42u.dll`, `mfc42loc.dll`
+(= XP `mfc42rus.dll`), `gdiplus.dll`, `nddeapi.dll`):
 
 ```bash
 BLISS_ASSETS=/path/to/xp-files npx tsx tests/test-xp-sol.mjs
