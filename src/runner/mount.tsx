@@ -19,8 +19,14 @@ import { installKeyboardGuard } from './keyboard';
 import { createMasterGain } from './audio';
 import type { GameHandle, MountOptions } from './types';
 import { decodeRegValue } from '../lib/emu/hooks';
+import { WM_KEYUP } from '../lib/emu/win32/types';
 
 const DEFAULT_LCID = 0x419;
+/** DOM input swallowed inside the runner root while `setInputBlocked(true)` */
+const BLOCKABLE_EVENTS = [
+  'pointerdown', 'pointerup', 'pointermove', 'mousedown', 'mouseup', 'click', 'dblclick', 'contextmenu',
+  'wheel', 'touchstart', 'touchmove', 'touchend', 'keydown', 'keypress', 'keyup',
+] as const;
 const FALLBACK_SCREEN = { width: 1024, height: 768 };
 
 interface RunnerAppProps {
@@ -132,6 +138,14 @@ export async function mountGame(host: HTMLElement, opts: MountOptions): Promise<
   const removeKeyboardGuard = installKeyboardGuard(root, audioContext);
 
   let emulator: Emulator | null = null;
+  let inputBlocked = false;
+  // Capture phase on the runner root: nothing inside (canvas, menus, dialog controls) sees input while blocked
+  const swallowInput = (e: Event) => {
+    if (!inputBlocked) return;
+    e.stopPropagation();
+    if (e.cancelable) e.preventDefault();
+  };
+  for (const type of BLOCKABLE_EVENTS) root.addEventListener(type, swallowInput, { capture: true, passive: false });
   let exited = false;
   let unmounted = false;
   const onExit = () => {
@@ -145,6 +159,7 @@ export async function mountGame(host: HTMLElement, opts: MountOptions): Promise<
       if (unmounted) return;
       unmounted = true;
       render(null, root);
+      for (const type of BLOCKABLE_EVENTS) root.removeEventListener(type, swallowInput, { capture: true });
       root.remove();
       removeKeyboardGuard();
       restoreColors();
@@ -159,6 +174,21 @@ export async function mountGame(host: HTMLElement, opts: MountOptions): Promise<
     setVolume(volume: number) { master.setVolume(volume); },
     get volume() { return master.volume; },
     get emulator() { return emulator; },
+    setInputBlocked(blocked: boolean) {
+      blocked = !!blocked;
+      if (blocked === inputBlocked) return;
+      inputBlocked = blocked;
+      const emu = emulator;
+      if (!emu) return;
+      emu.inputBlocked = blocked;
+      if (blocked) {
+        // Release keys held when the block started, so the program sees no stuck keys
+        const target = emu.focusedWindow || emu.mainWindow;
+        for (const vk of emu.keyStates) if (target) emu.postMessage(target, WM_KEYUP, vk, 1 | (3 << 30));
+        emu.keyStates.clear();
+      }
+    },
+    get inputBlocked() { return inputBlocked; },
     answerMessageBox(id, result) {
       emulator?.dismissMessageBox(id, result);
     },
@@ -193,6 +223,7 @@ export async function mountGame(host: HTMLElement, opts: MountOptions): Promise<
             emulator = emu;
             if (master.node) emu.audioOutput = master.node;
             if (opts.hooks) emu.hooks = opts.hooks;
+            emu.inputBlocked = inputBlocked;
             resolve();
           }}
         />

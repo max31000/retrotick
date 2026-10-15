@@ -5,6 +5,7 @@ import { applyLunaSysColors, LUNA_SYS_COLORS } from '../src/runner/luna-system.t
 import { SYS_COLORS, COLOR_BTNFACE } from '../src/lib/emu/win32/types.ts';
 import { toFixedCoords } from '../src/components/win2k/fixed-origin.ts';
 import { clampVolume, createMasterGain } from '../src/runner/audio.ts';
+import { runPollHook, isInputMessage } from '../src/lib/emu/hooks.ts';
 
 let fail = 0;
 const eq = (name, got, want) => {
@@ -68,6 +69,28 @@ eq('dispose disconnects', [n2.gone, g2.node], [true, null]);
 const g3 = createMasterGain(null, undefined, 0.3);
 g3.setVolume(0.6);
 eq('no AudioContext: volume tracked, no node', [g3.volume, g3.node], [0.6, null]);
+
+// --- hooks.poll: after input, otherwise throttled by pollIntervalMs
+{
+  let n = 0;
+  const hooks = { poll: () => { n++; }, pollIntervalMs: 100 };
+  const st = { inputSeq: 0, seenInputSeq: 0, last: 0 };
+  runPollHook(hooks, st, 1000); // interval elapsed since 0
+  runPollHook(hooks, st, 1050); // throttled
+  eq('poll throttled by interval', n, 1);
+  st.inputSeq++;
+  runPollHook(hooks, st, 1060); // input since the last call
+  eq('poll right after input', n, 2);
+  runPollHook(hooks, st, 1070);
+  runPollHook(hooks, st, 1160);
+  eq('poll again after the interval', n, 3);
+  const bad = { poll: () => { throw new Error('x'); } };
+  const warn = console.warn; console.warn = () => {};
+  runPollHook(bad, { inputSeq: 1, seenInputSeq: 0, last: 0 }, 0);
+  console.warn = warn;
+  eq('poll errors are contained', true, true);
+  eq('input messages', [0x100, 0x102, 0x201, 0x20A, 0x111, 0x0F, 0x113].map(isInputMessage), [true, true, true, true, true, false, false]);
+}
 
 console.log(fail ? `[TEST] FAIL (${fail})` : '[TEST] SUCCESS');
 process.exit(fail ? 1 : 0);

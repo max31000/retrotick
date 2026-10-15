@@ -83,6 +83,37 @@ export interface EmulatorHooks {
   registryWrite?(r: RegistryWriteInfo): void;
   textDraw?(t: TextDrawInfo): void;
   windowText?(w: WindowTextInfo): void;
+  /**
+   * Called after the emulator has run: after the first run that follows host input
+   * (keyboard/mouse/menu messages) and otherwise at most every `pollIntervalMs` while the
+   * program is running. Meant for cheap state polling (e.g. reading memory); keep it fast.
+   */
+  poll?(): void;
+  /** Minimum interval between time-based `poll` calls, ms (default 100) */
+  pollIntervalMs?: number;
+}
+
+/** Messages that count as host input for `EmulatorHooks.poll`. */
+export function isInputMessage(msg: number): boolean {
+  return (msg >= 0x0100 && msg <= 0x0109) // WM_KEYDOWN … WM_UNICHAR
+    || (msg >= 0x0200 && msg <= 0x020E) // WM_MOUSEMOVE … WM_MOUSEHWHEEL
+    || msg === 0x0111 || msg === 0x0112; // WM_COMMAND / WM_SYSCOMMAND (menus, accelerators)
+}
+
+const DEFAULT_POLL_INTERVAL_MS = 100;
+
+/** State for `runPollHook` kept on the emulator. */
+export interface PollState { inputSeq: number; seenInputSeq: number; last: number }
+
+/** Call `hooks.poll` if input arrived since the last call or the interval elapsed. */
+export function runPollHook(hooks: EmulatorHooks, st: PollState, now: number): void {
+  const poll = hooks.poll;
+  if (!poll) return;
+  const interval = hooks.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+  if (st.seenInputSeq === st.inputSeq && now - st.last < interval) return;
+  st.seenInputSeq = st.inputSeq;
+  st.last = now;
+  try { poll(); } catch (err) { console.warn('[HOOK] poll:', err); }
 }
 
 const REG_SZ = 1;

@@ -44,7 +44,8 @@ export interface MountOptions {
   onTitleChange?(title: string): void;
   /** Called when the caption «Свернуть» button is pressed (extension; default: no-op). */
   onMinimize?(): void;
-  /** Observe/answer what the program shows or stores (installed before the program starts). */
+  /** Observe/answer what the program shows or stores (installed before the program starts; the
+   *  object is used by reference, so the host may add or replace handlers later). */
   hooks?: GameHooks;
 }
 
@@ -120,6 +121,14 @@ export interface GameHooks {
   registryWrite?(r: RegistryWriteInfo): void;
   textDraw?(t: TextDrawInfo): void;
   windowText?(w: WindowTextInfo): void;
+  /**
+   * Called after the emulator has run: right after host input (keyboard, mouse, menu commands)
+   * has been processed and otherwise at most every `pollIntervalMs` while the program runs
+   * (an idle program waiting for input is not polled). For cheap state polling, e.g. `peek`.
+   */
+  poll?(): void;
+  /** Minimum interval between time-based `poll` calls, ms (default 100). */
+  pollIntervalMs?: number;
 }
 
 export interface GameHandle {
@@ -133,6 +142,13 @@ export interface GameHandle {
   readonly volume: number;
   /** The underlying RetroTick `Emulator` instance (for diagnostics/tests). */
   readonly emulator: unknown;
+  /**
+   * Block (true) or restore (false) all keyboard/mouse input to the program, e.g. while the
+   * host shows its own modal window above the game. Keys held at that moment are released;
+   * timers keep running. Pending message boxes can still be answered.
+   */
+  setInputBlocked(blocked: boolean): void;
+  readonly inputBlocked: boolean;
   /** Answer a message box kept pending by `hooks.messageBox` (`{ hidden: true }`) — IDOK=1, IDYES=6, IDNO=7… */
   answerMessageBox(id: number, result: number): void;
   /** Read-only copy of emulated memory (`length` bytes at linear address `address`); empty before start. */

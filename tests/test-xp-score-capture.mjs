@@ -22,24 +22,29 @@ async function boot(exe, companions = []) {
 }
 
 // ---------------------------------------------------------------- Minesweeper
-// Adapter: dialog 600 (name entry, shown only for a new best time of a standard level) is answered
-// with the site user's name; dialog 700 ("Чемпионы по категориям") that follows is read and closed.
-function winmineAdapter(emu, playerName, events) {
-  let pendingLevel = null;
-  const LEVELS = [['новичк', 'beginner', 701], ['любител', 'intermediate', 703], ['профессионал', 'expert', 705]];
+// Adapter (as in Bliss web): every win is seen by polling memory after input/timers (hooks.poll):
+// smiley state 0x1005160 == 3 → win, time 0x100579C, board size 0x1005334/0x1005338, mines 0x1005330.
+// The native record dialogs are only suppressed: 600 (name entry, shown for a new local best)
+// is answered unseen, 700 ("Чемпионы по категориям") is never created — after a record it is
+// dropped, from the menu (command 528) the host would open its own leaderboards window instead.
+function winmineAdapter(emu, events) {
+  const m = emu.memory;
+  let lastFace = -1;
+  let recordDialog = false;
+  emu.hooks.poll = () => {
+    const face = m.readU32(0x1005160);
+    if (face === 3 && lastFace !== 3) {
+      events.push({ game: 'winmine', timeSec: m.readU32(0x100579C), w: m.readU32(0x1005334), h: m.readU32(0x1005338),
+        mines: m.readU32(0x1005330), recordDialog });
+      recordDialog = false;
+    }
+    lastFace = face;
+  };
   emu.hooks.dialogInit = (d) => {
-    if (d.template === 600) {
-      const lvl = LEVELS.find(([kw]) => (d.controls[601] || '').includes(kw));
-      pendingLevel = lvl ?? null;
-      return { press: 100, values: { 602: playerName } };
-    }
-    if (d.template === 700 && pendingLevel) {
-      const [, level, ctl] = pendingLevel;
-      pendingLevel = null;
-      const time = parseInt(d.controls[ctl], 10);
-      events.push({ game: 'winmine', level, timeSec: time, name: d.controls[ctl + 1], memTime: emu.memory.readU32(0x100579C) });
-      return { press: 1 };
-    }
+    if (d.template === 600) { recordDialog = true; return { press: 100, values: { 602: 'Аноним' } }; }
+  };
+  emu.hooks.dialogCreate = (d) => {
+    if (d.template === 700) { events.push({ dialog700: recordDialog ? 'after-record' : 'menu' }); return { result: 1 }; }
   };
   emu.hooks.registryWrite = (r) => events.push({ reg: `${r.path}\\${r.name}`, value: r.value });
 }
@@ -69,24 +74,30 @@ async function winmineWin(emu, delayMs) {
 {
   const { emu, restore } = await boot('winmine.exe');
   const events = [];
-  winmineAdapter(emu, 'Вася', events);
+  winmineAdapter(emu, events);
   await winmineWin(emu, 0);
-  const rec = events.find(e => e.game);
-  check(!!rec && rec.level === 'beginner' && rec.timeSec === rec.memTime && rec.name === 'Вася',
-    `winmine record captured: ${JSON.stringify(rec)}`);
+  const wins = () => events.filter(e => e.game);
+  const w1 = wins()[0];
+  check(!!w1 && w1.timeSec >= 1 && w1.w === 9 && w1.h === 9 && w1.mines === 10 && w1.recordDialog,
+    `winmine win 1 (beginner, new local best) captured by polling: ${JSON.stringify(w1)}`);
+  check(events.some(e => e.dialog700 === 'after-record'), 'winmine: dialog 700 after the record is suppressed');
   check(!emu.dialogState && emu.messageBoxes.length === 0, 'winmine: no native dialog left on screen');
-  // Second game, slower than the stored best: the program shows no dialog at all
-  events.length = 0;
+  // Second game, slower than the stored best: no native dialog at all, polling still sees the win
   emu.postMessage(emu.mainWindow, WM_KEYDOWN, 0x71 /* VK_F2 */, 0);
   emu.postMessage(emu.mainWindow, WM_KEYUP, 0x71, 0);
   await pump(emu, 300);
   await winmineWin(emu, 2300);
-  const t2 = emu.memory.readU32(0x100579C);
-  check(!events.some(e => e.game), `winmine: slower win (${t2} s) → no record dialog, no event (memory peek needed to see every win)`);
+  const w2 = wins()[1];
+  check(wins().length === 2 && !!w2 && w2.timeSec > w1.timeSec && !w2.recordDialog,
+    `winmine win 2 (slower, no record dialog) captured too: ${JSON.stringify(w2)}`);
+  // Menu «Чемпионы...» (command 528): dialog 700 outside a record → host opens its own window
+  emu.postMessage(emu.mainWindow, WM_COMMAND, 528, 0);
+  await pump(emu, 300);
+  check(events.filter(e => e.dialog700 === 'menu').length === 1 && !emu.dialogState, 'winmine: «Чемпионы...» from the menu is intercepted');
   emu.postMessage(emu.mainWindow, WM_CLOSE, 0, 0);
   await pump(emu, 500);
   const regs = events.filter(e => e.reg && /time1|name1/i.test(e.reg));
-  check(regs.length === 2 && regs.some(r => r.value === rec?.timeSec), `winmine writes records only on exit: ${JSON.stringify(regs)}`);
+  check(regs.length === 2 && regs.some(r => r.value === w1?.timeSec), `winmine writes records only on exit: ${JSON.stringify(regs)}`);
   restore();
 }
 
@@ -105,9 +116,10 @@ function solAdapter(emu, events) {
   };
   emu.hooks.messageBox = (mb) => {
     if (mb.text === 'Сдать заново?' && st.won) {
-      events.push({ game: 'sol', score: st.score, timeSec: st.time, bonus: st.bonus });
+      const mode = emu.registryStore.getValueByPath('HKEY_CURRENT_USER\\Software\\Microsoft\\Solitaire', 'Параметры');
+      events.push({ game: 'sol', score: st.score, timeSec: st.time, bonus: st.bonus, held: mb.id, mode: mode ? mode.data[0] : null });
       st.won = false;
-      return { result: IDNO }; // web app shows its own dialog instead (or { hidden: true } and answer later)
+      return { hidden: true }; // held without UI while the web app shows its own window; answered later
     }
   };
   emu.hooks.registryWrite = (r) => events.push({ reg: `${r.path}\\${r.name}`, value: r.value });
@@ -133,7 +145,13 @@ function solAdapter(emu, events) {
   await pump(emu, 1500);
   const win = events.find(e => e.game);
   check(!!win && win.timeSec > 0 && win.score !== null && win.bonus !== null, `sol win captured: ${JSON.stringify(win)}`);
-  check(emu.messageBoxes.length === 0 && !emu.halted, 'sol: "Сдать заново?" answered by the host, program still running');
+  check(emu.messageBoxes.length === 1 && emu.messageBoxes[0].id === win?.held, 'sol: "Сдать заново?" held pending (no UI) while the host window is open');
+  await pump(emu, 500);
+  check(emu.messageBoxes.length === 1, 'sol: held message box survives until answered');
+  emu.dismissMessageBox(win?.held, IDNO);
+  emu.dismissMessageBox(win?.held, IDNO); // second answer is a no-op
+  await pump(emu, 500);
+  check(emu.messageBoxes.length === 0 && !emu.halted, 'sol: held "Сдать заново?" answered later by the host, program still running');
   // Options dialog answered by the host: shows which registry values carry the game mode
   // (300/301 draw one/three, 302/303/304 standard/Vegas/none, 305 timed, 306 status bar, 307 outline, 308 keep Vegas score)
   const variants = [{}, { 300: 1, 301: 0 }, { 302: 0, 303: 1 }, { 305: 0 }, { 308: 1 }, { 303: 0, 304: 1 }, { 306: 0 }, { 307: 1 }];
@@ -151,6 +169,8 @@ function solAdapter(emu, events) {
     out(`[TEST] sol options: checked before={${seen}} set=${JSON.stringify(v)} → ${regs.join(' ')}`);
     if (v === variants[0]) check(regs.length > 0, 'sol options dialog answered by the host and stored in the registry');
   }
+  const mode = emu.registryStore.getValueByPath('HKEY_CURRENT_USER\\Software\\Microsoft\\Solitaire', 'Параметры');
+  check(mode?.data?.[0] === 0x64, `sol mode readable through the registry (readRegistry): 0x${mode?.data?.[0]?.toString(16)}`);
   restore();
 }
 

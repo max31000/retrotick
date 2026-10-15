@@ -26,7 +26,7 @@ import { emuTick, emuCallWndProc, emuCallWndProc16, emuCallNative, emuCallCallba
 import { emuTickARM, emuCallWndProcARM } from './emu-exec-arm';
 import { Thread } from './thread';
 import { DoubleClickTracker } from './mouse-buttons';
-import type { EmulatorHooks } from './hooks';
+import { isInputMessage, runPollHook, type EmulatorHooks, type PollState } from './hooks';
 import { DEFAULT_DOUBLE_CLICK_TIME, DEFAULT_DOUBLE_CLICK_CX, DEFAULT_DOUBLE_CLICK_CY } from './win32/types';
 
 export { fillTextBitmap } from './emu-render';
@@ -589,6 +589,13 @@ export class Emulator {
   traceApi = false;
   /** Host observation/automation hooks (see hooks.ts) */
   hooks: EmulatorHooks = {};
+  /** `hooks.poll` bookkeeping (input sequence / last call time) */
+  _poll: PollState = { inputSeq: 0, seenInputSeq: 0, last: 0 };
+  /**
+   * Host input gate: while true the embedding view delivers no keyboard/mouse input
+   * (e.g. a host modal window is shown above the program). Timers keep running.
+   */
+  inputBlocked = false;
   /** Mouse settings (GetDoubleClickTime / SM_CXDOUBLECLK / SM_CYDOUBLECLK) */
   doubleClickTime = DEFAULT_DOUBLE_CLICK_TIME;
   doubleClickCx = DEFAULT_DOUBLE_CLICK_CX;
@@ -1276,6 +1283,7 @@ export class Emulator {
   }
 
   postMessage(hwnd: number, message: number, wParam: number, lParam: number): void {
+    if (isInputMessage(message)) this._poll.inputSeq++;
     // Route to the thread that owns the target window. Windows delivers
     // window messages to the creating (UI) thread's queue — never to whichever
     // thread happens to be scheduled. Windows without a recorded owner belong
@@ -2159,5 +2167,6 @@ export class Emulator {
     } else {
       emuTick(this);
     }
+    if (this.hooks.poll && this.running && !this.halted) runPollHook(this.hooks, this._poll, performance.now());
   };
 }
