@@ -1,5 +1,6 @@
 import type { Emulator } from '../../emulator';
-import type { PenInfo, BrushInfo } from './types';
+import type { PenInfo, BrushInfo, BitmapInfo } from './types';
+import { BS_NULL, BS_HATCHED, BS_PATTERN } from '../constants-gdi';
 
 export function registerBrush(emu: Emulator): void {
   const gdi32 = emu.registerDll('GDI32.DLL');
@@ -15,8 +16,9 @@ export function registerBrush(emu: Emulator): void {
     // LOGBRUSH: lbStyle (UINT), lbColor (COLORREF), lbHatch (ULONG_PTR)
     const style = emu.memory.readU32(ptr);
     const color = emu.memory.readU32(ptr + 4);
-    const BS_NULL = 1;
-    const brush: BrushInfo = { color, style, isNull: style === BS_NULL };
+    const hatch = emu.memory.readU32(ptr + 8);
+    if (style === BS_PATTERN) return createPatternBrush(hatch);
+    const brush: BrushInfo = { color, style, isNull: style === BS_NULL, hatch: style === BS_HATCHED ? hatch : undefined };
     return emu.handles.alloc('brush', brush);
   });
 
@@ -49,17 +51,24 @@ export function registerBrush(emu: Emulator): void {
   });
 
   gdi32.register('CreateHatchBrush', 2, () => {
-    const _style = emu.readArg(0);
+    const hatch = emu.readArg(0);
     const color = emu.readArg(1);
-    return emu.handles.alloc('brush', { color });
+    const brush: BrushInfo = { color, style: BS_HATCHED, hatch, isNull: false };
+    return emu.handles.alloc('brush', brush);
   });
 
   gdi32.register('SetBrushOrgEx', 4, () => 1);
 
-  gdi32.register('CreatePatternBrush', 1, () => {
-    const _hBitmap = emu.readArg(0);
-    return emu.handles.alloc('brush', { color: 0xFFFFFF });
-  });
+  // Pattern brushes keep a copy of the bitmap (later changes to the bitmap don't affect them)
+  function createPatternBrush(hBitmap: number): number {
+    const bmp = emu.handles.get<BitmapInfo>(hBitmap);
+    if (!bmp) return 0;
+    const copy = new OffscreenCanvas(bmp.width, bmp.height);
+    copy.getContext('2d')!.drawImage(bmp.canvas, 0, 0);
+    const brush: BrushInfo = { color: 0, style: BS_PATTERN, isNull: false, patternBitmap: copy, patternMono: !!bmp.monochrome };
+    return emu.handles.alloc('brush', brush);
+  }
+  gdi32.register('CreatePatternBrush', 1, () => createPatternBrush(emu.readArg(0)));
 
   gdi32.register('CreateDIBPatternBrushPt', 2, () => {
     const _data = emu.readArg(0);

@@ -1,4 +1,5 @@
 import type { Emulator } from '../../emulator';
+import { brushFillStyle } from './pattern';
 import { Region, type Rect, type RegionOp } from '../../region';
 import { SYS_COLORS } from '../types';
 import { colorToCSS } from './_helpers';
@@ -114,12 +115,15 @@ export function fillRegionWithBrush(emu: Emulator, hdc: number, rgn: Region, hBr
   if (!dc) return false;
   let color: number | null = null;
   if (hBrush > 0 && hBrush <= 30) color = SYS_COLORS[hBrush - 1] ?? null;
+  let style: string | CanvasPattern | null = null;
   if (color === null) {
     const brush = emu.getBrush(hBrush);
-    if (brush && !brush.isNull) color = brush.color;
+    if (brush && !brush.isNull) style = brushFillStyle(emu, dc, brush);
+  } else {
+    style = colorToCSS(color);
   }
-  if (color === null) return true;
-  dc.ctx.fillStyle = colorToCSS(color);
+  if (style === null) return true;
+  dc.ctx.fillStyle = style;
   for (const r of rgn.rects) dc.ctx.fillRect(r.left, r.top, r.right - r.left, r.bottom - r.top);
   emu.syncDCToCanvas(hdc);
   return true;

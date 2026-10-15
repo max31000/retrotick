@@ -72,6 +72,10 @@ export interface BrushInfo {
   style?: number;
   isNull: boolean;
   patternBitmap?: OffscreenCanvas | HTMLCanvasElement;
+  /** Pattern brush made from a monochrome bitmap: 0 bits use the text colour, 1 bits the background */
+  patternMono?: boolean;
+  /** HS_* style of a hatch brush (style BS_HATCHED) */
+  hatch?: number;
 }
 
 export interface PaletteInfo {

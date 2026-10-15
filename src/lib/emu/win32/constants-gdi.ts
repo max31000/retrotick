@@ -66,3 +66,32 @@ export const LOCALE_USER_DEFAULT = 0x0400;
 export const LOCALE_SYSTEM_DEFAULT = 0x0800;
 export const SUBLANG_NEUTRAL = 0x00;
 export const SUBLANG_DEFAULT = 0x01;
+
+// --- Brush styles / hatch styles (wingdi.h) ---
+export const BS_SOLID = 0;
+export const BS_NULL = 1;
+export const BS_HATCHED = 2;
+export const BS_PATTERN = 3;
+export const BS_DIBPATTERN = 5;
+export const BS_DIBPATTERNPT = 6;
+export const HS_HORIZONTAL = 0;
+export const HS_VERTICAL = 1;
+export const HS_FDIAGONAL = 2;
+export const HS_BDIAGONAL = 3;
+export const HS_CROSS = 4;
+export const HS_DIAGCROSS = 5;
+export const HATCH_SIZE = 8;
+
+// --- Pen styles (wingdi.h) ---
+export const PS_STYLE_MASK = 0x0000000F;
+export const PS_INSIDEFRAME = 6;
+export const PS_TYPE_MASK = 0x000F0000;
+export const PS_GEOMETRIC = 0x00010000;
+
+// --- Binary raster operations (SetROP2) ---
+export const R2_BLACK = 1;
+export const R2_NOT = 6;
+export const R2_XORPEN = 7;
+export const R2_NOP = 11;
+export const R2_COPYPEN = 13;
+export const R2_WHITE = 16;

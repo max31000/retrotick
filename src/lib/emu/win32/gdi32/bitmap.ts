@@ -2,7 +2,7 @@ import type { Emulator } from '../../emulator';
 import type { BitmapInfo } from './types';
 import {
   SRCCOPY, NOTSRCCOPY, SRCPAINT, SRCAND, SRCINVERT, BLACKNESS, WHITENESS,
-  DSNA, PSDPXAX,
+  DSNA, PSDPXAX, PATCOPY,
   SIZEOF_BITMAP,
 } from '../types';
 import type { DCInfo } from './types';
@@ -12,6 +12,9 @@ import { decodeDib } from '../../../pe/decode-dib';
 import { dcPutImageData, syncDibToCanvas } from '../../emu-window';
 import { resolvePaletteColors } from './palette';
 import { emuCompleteThunk } from '../../emu-exec';
+import { writeDdbBits, ddbStride } from './bitmap-bits';
+import { bltRop3, ropUsesSource } from './rop3';
+import { brushFillStyle } from './pattern';
 
 export function registerBitmap(emu: Emulator): void {
   const gdi32 = emu.registerDll('GDI32.DLL');
@@ -50,7 +53,10 @@ export function registerBitmap(emu: Emulator): void {
     const ctx = canvas.getContext('2d')!;
     disableSmoothing(ctx);
     const monochrome = (nPlanes === 1 && nBitCount === 1);
-    return emu.handles.alloc('bitmap', { width, height, canvas, ctx, monochrome });
+    const bmp: BitmapInfo = { width, height, canvas, ctx, monochrome };
+    const bits = emu.readArg(4);
+    if (bits) writeDdbBits(emu, bmp, nPlanes * nBitCount, bits);
+    return emu.handles.alloc('bitmap', bmp);
   });
 
   gdi32.register('CreateDIBSection', 6, () => {
@@ -405,7 +411,14 @@ export function registerBitmap(emu: Emulator): void {
     return img.height;
   });
   gdi32.register('GetBitmapBits', 3, () => 0);
-  gdi32.register('SetBitmapBits', 3, () => 0); // device-dependent bits are not supported
+  // SetBitmapBits(hbm, cb, bits): DDB bits — 1 bpp for monochrome bitmaps, 32 bpp otherwise
+  gdi32.register('SetBitmapBits', 3, () => {
+    const bmp = emu.handles.get<BitmapInfo>(emu.readArg(0));
+    const cb = emu.readArg(1);
+    if (!bmp) return 0;
+    const bpp = bmp.monochrome ? 1 : 32;
+    return writeDdbBits(emu, bmp, bpp, emu.readArg(2), cb) ? Math.min(cb, ddbStride(bmp.width, bpp) * bmp.height) : 0;
+  });
 
   gdi32.register('BitBlt', 9, () => {
     const hdcDest = emu.readArg(0);
@@ -562,9 +575,9 @@ export function registerBitmap(emu: Emulator): void {
       }
       putResult(dstData);
     } else {
-      // Default: SRCCOPY
-      console.warn(`[GDI] BitBlt: unimplemented ROP 0x${(rop >>> 0).toString(16)} — falling back to SRCCOPY`);
-      dstDC.ctx.drawImage(srcDC.canvas, xSrc, ySrc, width, height, xDst, yDst, width, height);
+      // Any other ternary raster operation
+      const src = ropUsesSource(rop) ? getConvertedSrcData().data : null;
+      bltRop3(emu, dstDC, xDst, yDst, width, height, rop, src, emu.getBrush(dstDC.selectedBrush));
     }
 
     emu.syncDCToCanvas(hdcDest);
@@ -761,13 +774,15 @@ export function registerBitmap(emu: Emulator): void {
     } else if (rop === WHITENESS) {
       dc.ctx.fillStyle = '#fff';
       dc.ctx.fillRect(x, y, w, h);
-    } else {
-      // PATCOPY: fill with brush
+    } else if (rop === PATCOPY) {
       const brush = emu.getBrush(dc.selectedBrush);
       if (brush && !brush.isNull) {
-        dc.ctx.fillStyle = colorToCSS(brush.color);
+        dc.ctx.fillStyle = brushFillStyle(emu, dc, brush);
         dc.ctx.fillRect(x, y, w, h);
       }
+    } else if (w > 0 && h > 0 && w <= 16384 && h <= 16384) {
+      // PATINVERT, DSTINVERT and the other pattern/destination operations
+      bltRop3(emu, dc, x, y, w, h, rop, null, emu.getBrush(dc.selectedBrush));
     }
 
     emu.syncDCToCanvas(hdc);

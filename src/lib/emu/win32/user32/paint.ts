@@ -1,4 +1,5 @@
 import type { Emulator } from '../../emulator';
+import { brushFillStyle, isPatternBrush } from '../gdi32/pattern';
 import type { WindowInfo } from './types';
 import {
   SYS_COLORS,
@@ -65,6 +66,12 @@ export function registerPaint(emu: Emulator): void {
     }
     if (color === null) {
       const brush = emu.getBrush(hBrush);
+      if (brush && isPatternBrush(brush)) {
+        dc.ctx.fillStyle = brushFillStyle(emu, dc, brush);
+        dc.ctx.fillRect(left, top, right - left, bottom - top);
+        emu.syncDCToCanvas(hdc);
+        return 1;
+      }
       if (brush && !brush.isNull) color = brush.color;
     }
     if (color !== null) {

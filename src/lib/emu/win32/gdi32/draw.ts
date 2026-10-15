@@ -58,123 +58,7 @@ export function registerDraw(emu: Emulator): void {
     return 1;
   });
 
-  gdi32.register('LineTo', 3, () => {
-    const hdc = emu.readArg(0);
-    const x = emu.readArg(1) | 0;
-    const y = emu.readArg(2) | 0;
 
-    const dc = emu.getDC(hdc);
-    if (!dc) return 0;
-
-    const pen = emu.getPen(dc.selectedPen);
-    const rop2 = dc.rop2;
-    // R2_NOP (11) = no drawing; R2_COPYPEN (13) = normal; PS_NULL = invisible pen
-    const R2_NOP = 11, R2_COPYPEN = 13, R2_WHITE = 16, R2_BLACK = 1;
-    if (rop2 === R2_NOP) {
-      // do nothing
-    } else if (rop2 === R2_WHITE) {
-      dc.ctx.fillStyle = '#ffffff';
-      bresenhamLine(dc.ctx, dc.penPosX, dc.penPosY, x, y);
-    } else if (rop2 === R2_BLACK) {
-      dc.ctx.fillStyle = '#000000';
-      bresenhamLine(dc.ctx, dc.penPosX, dc.penPosY, x, y);
-    } else if (rop2 === R2_COPYPEN) {
-      // Normal pen drawing
-      if (pen && pen.style !== PS_NULL) {
-        if (isPaletteIndex(pen.color)) {
-          const pal = emu.handles.get<PaletteInfo>(dc.selectedPalette);
-          const [r, g, b] = resolveColor(pen.color, pal ?? undefined);
-          dc.ctx.fillStyle = `rgb(${r},${g},${b})`;
-          const cw = dc.canvas.width || 1;
-          const ch = dc.canvas.height || 1;
-          const palBuf = ensurePalIndexBuf(dc);
-          const palIdx = getPaletteIdx(pen.color);
-          bresenhamLinePal(dc.ctx, dc.penPosX, dc.penPosY, x, y, palBuf, cw, ch, palIdx + 1);
-        } else {
-          dc.ctx.fillStyle = colorToCSS(pen.color);
-          bresenhamLine(dc.ctx, dc.penPosX, dc.penPosY, x, y);
-        }
-      }
-    } else {
-      // All other ROP2 modes need per-pixel dst read
-      let pr = 0, pg = 0, pb = 0;
-      if (pen) { pr = pen.color & 0xFF; pg = (pen.color >> 8) & 0xFF; pb = (pen.color >> 16) & 0xFF; }
-      const cw = dc.canvas.width || 1, ch = dc.canvas.height || 1;
-      // getImageData ignores canvas transforms — apply offset manually
-      const tf = dc.ctx.getTransform();
-      const oX = Math.round(tf.e), oY = Math.round(tf.f);
-      const imgData = dc.ctx.getImageData(0, 0, cw, ch);
-      const d = imgData.data;
-      let x0 = dc.penPosX, y0 = dc.penPosY, x1 = x, y1 = y;
-      const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
-      const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
-      let err = dx - dy;
-      while (true) {
-        const cx = x0 + oX, cy = y0 + oY;
-        if (cx >= 0 && cx < cw && cy >= 0 && cy < ch) {
-          const off = (cy * cw + cx) * 4;
-          const dr = d[off], dg = d[off+1], db = d[off+2];
-          let rr: number, rg: number, rb: number;
-          switch (rop2) {
-            case 2:  rr = ~(dr|pr)&0xFF; rg = ~(dg|pg)&0xFF; rb = ~(db|pb)&0xFF; break; // R2_NOTMERGEPEN
-            case 3:  rr = dr&(~pr&0xFF); rg = dg&(~pg&0xFF); rb = db&(~pb&0xFF); break; // R2_MASKNOTPEN
-            case 4:  rr = ~pr&0xFF;      rg = ~pg&0xFF;      rb = ~pb&0xFF;      break; // R2_NOTCOPYPEN
-            case 5:  rr = pr&(~dr&0xFF); rg = pg&(~dg&0xFF); rb = pb&(~db&0xFF); break; // R2_MASKPENNOT
-            case 6:  rr = ~dr&0xFF;      rg = ~dg&0xFF;      rb = ~db&0xFF;      break; // R2_NOT
-            case 7:  rr = dr^pr;         rg = dg^pg;         rb = db^pb;         break; // R2_XORPEN
-            case 8:  rr = ~(dr&pr)&0xFF; rg = ~(dg&pg)&0xFF; rb = ~(db&pb)&0xFF; break; // R2_NOTMASKPEN
-            case 9:  rr = dr&pr;         rg = dg&pg;         rb = db&pb;         break; // R2_MASKPEN
-            case 10: rr = ~(dr^pr)&0xFF; rg = ~(dg^pg)&0xFF; rb = ~(db^pb)&0xFF; break; // R2_NOTXORPEN
-            case 12: rr = dr|(~pr&0xFF); rg = dg|(~pg&0xFF); rb = db|(~pb&0xFF); break; // R2_MERGENOTPEN
-            case 14: rr = pr|(~dr&0xFF); rg = pg|(~dg&0xFF); rb = pb|(~db&0xFF); break; // R2_MERGEPENNOT
-            case 15: rr = dr|pr;         rg = dg|pg;         rb = db|pb;         break; // R2_MERGEPEN
-            default: rr = pr; rg = pg; rb = pb; break;
-          }
-          d[off] = rr; d[off+1] = rg; d[off+2] = rb;
-        }
-        if (x0 === x1 && y0 === y1) break;
-        const e2 = 2 * err;
-        if (e2 > -dy) { err -= dy; x0 += sx; }
-        if (e2 < dx) { err += dx; y0 += sy; }
-      }
-      dc.ctx.putImageData(imgData, 0, 0);
-    }
-    dc.penPosX = x;
-    dc.penPosY = y;
-
-    emu.syncDCToCanvas(hdc);
-    return 1;
-  });
-
-  gdi32.register('Rectangle', 5, () => {
-    const hdc = emu.readArg(0);
-    const left = emu.readArg(1) | 0;
-    const top = emu.readArg(2) | 0;
-    const right = emu.readArg(3) | 0;
-    const bottom = emu.readArg(4) | 0;
-
-    const dc = emu.getDC(hdc);
-    if (!dc) return 0;
-
-    const brush = emu.getBrush(dc.selectedBrush);
-    if (brush && !brush.isNull) {
-      dc.ctx.fillStyle = colorToCSS(brush.color);
-      dc.ctx.fillRect(left, top, right - left, bottom - top);
-    }
-
-    const pen = emu.getPen(dc.selectedPen);
-    if (pen && pen.style !== PS_NULL) {
-      // Pixel-perfect rectangle border (no anti-aliasing)
-      dc.ctx.fillStyle = colorToCSS(pen.color);
-      dc.ctx.fillRect(left, top, right - left, 1);           // top
-      dc.ctx.fillRect(left, bottom - 1, right - left, 1);    // bottom
-      dc.ctx.fillRect(left, top, 1, bottom - top);           // left
-      dc.ctx.fillRect(right - 1, top, 1, bottom - top);      // right
-    }
-
-    emu.syncDCToCanvas(hdc);
-    return 1;
-  });
 
   gdi32.register('SetPixel', 4, () => {
     const hdc = emu.readArg(0);
@@ -243,27 +127,6 @@ export function registerDraw(emu: Emulator): void {
     }
   });
 
-  gdi32.register('Polyline', 3, () => {
-    const hdc = emu.readArg(0);
-    const ptsPtr = emu.readArg(1);
-    const count = emu.readArg(2);
-    const dc = emu.getDC(hdc);
-    if (!dc || count < 2) return 0;
-    const pen = emu.getPen(dc.selectedPen);
-    if (pen && pen.style !== PS_NULL) {
-      dc.ctx.fillStyle = colorToCSS(pen.color);
-      let prevX = emu.memory.readI32(ptsPtr);
-      let prevY = emu.memory.readI32(ptsPtr + 4);
-      for (let i = 1; i < count; i++) {
-        const nx = emu.memory.readI32(ptsPtr + i * 8);
-        const ny = emu.memory.readI32(ptsPtr + i * 8 + 4);
-        bresenhamLine(dc.ctx, prevX, prevY, nx, ny);
-        prevX = nx; prevY = ny;
-      }
-    }
-    emu.syncDCToCanvas(hdc);
-    return 1;
-  });
 
   gdi32.register('PolyBezier', 3, () => {
     const hdc = emu.readArg(0);
@@ -336,42 +199,6 @@ export function registerDraw(emu: Emulator): void {
     return 1;
   });
 
-  gdi32.register('Polygon', 3, () => {
-    const hdc = emu.readArg(0);
-    const ptsPtr = emu.readArg(1);
-    const count = emu.readArg(2);
-    const dc = emu.getDC(hdc);
-    if (!dc || count < 2) return 0;
-    dc.ctx.beginPath();
-    for (let i = 0; i < count; i++) {
-      const x = emu.memory.readI32(ptsPtr + i * 8);
-      const y = emu.memory.readI32(ptsPtr + i * 8 + 4);
-      if (i === 0) dc.ctx.moveTo(x, y);
-      else dc.ctx.lineTo(x, y);
-    }
-    dc.ctx.closePath();
-    const brush = emu.getBrush(dc.selectedBrush);
-    if (brush && !brush.isNull) {
-      dc.ctx.fillStyle = colorToCSS(brush.color);
-      dc.ctx.fill();
-    }
-    const pen = emu.getPen(dc.selectedPen);
-    if (pen && pen.style !== PS_NULL) {
-      dc.ctx.fillStyle = colorToCSS(pen.color);
-      let prevX = emu.memory.readI32(ptsPtr);
-      let prevY = emu.memory.readI32(ptsPtr + 4);
-      for (let i = 1; i < count; i++) {
-        const nx = emu.memory.readI32(ptsPtr + i * 8);
-        const ny = emu.memory.readI32(ptsPtr + i * 8 + 4);
-        bresenhamLine(dc.ctx, prevX, prevY, nx, ny);
-        prevX = nx; prevY = ny;
-      }
-      // Close polygon
-      bresenhamLine(dc.ctx, prevX, prevY, emu.memory.readI32(ptsPtr), emu.memory.readI32(ptsPtr + 4));
-    }
-    emu.syncDCToCanvas(hdc);
-    return 1;
-  });
   gdi32.register('SetStretchBltMode', 2, () => 1);
 
   const ALTERNATE = 1;
@@ -538,72 +365,7 @@ export function registerDraw(emu: Emulator): void {
     return 1;
   });
 
-  // Ellipse(hdc, left, top, right, bottom)
-  gdi32.register('Ellipse', 5, () => {
-    const hdc = emu.readArg(0);
-    const left = emu.readArg(1) | 0;
-    const top = emu.readArg(2) | 0;
-    const right = emu.readArg(3) | 0;
-    const bottom = emu.readArg(4) | 0;
-    const dc = emu.getDC(hdc);
-    if (!dc) return 0;
-    const cx = (left + right) / 2, cy = (top + bottom) / 2;
-    const rx = (right - left) / 2, ry = (bottom - top) / 2;
-    dc.ctx.beginPath();
-    dc.ctx.ellipse(cx, cy, Math.abs(rx), Math.abs(ry), 0, 0, 2 * Math.PI);
-    const brush = emu.getBrush(dc.selectedBrush);
-    if (brush && !brush.isNull) {
-      dc.ctx.fillStyle = colorToCSS(brush.color);
-      dc.ctx.fill();
-    }
-    const pen = emu.getPen(dc.selectedPen);
-    if (pen && pen.style !== PS_NULL) {
-      dc.ctx.strokeStyle = colorToCSS(pen.color);
-      dc.ctx.lineWidth = Math.max(1, pen.width);
-      dc.ctx.stroke();
-    }
-    emu.syncDCToCanvas(hdc);
-    return 1;
-  });
 
-  // RoundRect(hdc, left, top, right, bottom, width, height)
-  gdi32.register('RoundRect', 7, () => {
-    const hdc = emu.readArg(0);
-    const left = emu.readArg(1) | 0;
-    const top = emu.readArg(2) | 0;
-    const right = emu.readArg(3) | 0;
-    const bottom = emu.readArg(4) | 0;
-    const ew = emu.readArg(5) | 0;
-    const eh = emu.readArg(6) | 0;
-    const dc = emu.getDC(hdc);
-    if (!dc) return 0;
-    const rx = ew / 2, ry = eh / 2;
-    const ctx = dc.ctx;
-    ctx.beginPath();
-    ctx.moveTo(left + rx, top);
-    ctx.lineTo(right - rx, top);
-    ctx.ellipse(right - rx, top + ry, rx, ry, 0, -Math.PI / 2, 0);
-    ctx.lineTo(right, bottom - ry);
-    ctx.ellipse(right - rx, bottom - ry, rx, ry, 0, 0, Math.PI / 2);
-    ctx.lineTo(left + rx, bottom);
-    ctx.ellipse(left + rx, bottom - ry, rx, ry, 0, Math.PI / 2, Math.PI);
-    ctx.lineTo(left, top + ry);
-    ctx.ellipse(left + rx, top + ry, rx, ry, 0, Math.PI, 3 * Math.PI / 2);
-    ctx.closePath();
-    const brush = emu.getBrush(dc.selectedBrush);
-    if (brush && !brush.isNull) {
-      ctx.fillStyle = colorToCSS(brush.color);
-      ctx.fill();
-    }
-    const pen = emu.getPen(dc.selectedPen);
-    if (pen && pen.style !== PS_NULL) {
-      ctx.strokeStyle = colorToCSS(pen.color);
-      ctx.lineWidth = Math.max(1, pen.width);
-      ctx.stroke();
-    }
-    emu.syncDCToCanvas(hdc);
-    return 1;
-  });
 
   // Helper to compute arc angle from reference point
   function arcAngle(cx: number, cy: number, x: number, y: number): number {
