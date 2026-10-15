@@ -8,6 +8,7 @@ import { emuCompleteThunk } from '../../emu-exec';
 import { renderChildControls } from '../../emu-render';
 import { IDCANCEL } from '../types';
 import { getNonClientMetrics, isCharMessage, convertCharParam } from './_helpers';
+import { hookDialogCreate, hookDialogInit } from './dialog-hooks';
 import { buildDialogOverlays, isSecondaryTopLevelDialog, showModelessDialog, hideModelessDialog, fireDialogCbtCreate } from './modeless-dialog';
 
 const RT_DIALOG = 5;
@@ -158,7 +159,10 @@ export function registerDialog(emu: Emulator): void {
   const dluX = (v: number) => Math.round(v * _dluBaseX / 4);
   const dluY = (v: number) => Math.round(v * _dluBaseY / 8);
 
-  const runModalDialog = (capturedStackBytes: number, dlg: DialogTemplate, hInstance: number, hwndParent: number, dlgProc: number, lParam: number, templateDesc: string): number | undefined => {
+  const runModalDialog = (capturedStackBytes: number, dlg: DialogTemplate, hInstance: number, hwndParent: number, dlgProc: number, lParam: number, template: number | string): number | undefined => {
+    const skipped = hookDialogCreate(emu, template, dlg.title, hwndParent);
+    if (skipped !== undefined) return skipped;
+    const templateDesc = String(template);
     setDluBase(dlg);
     const clientW = dluX(dlg.cx);
     const clientH = dluY(dlg.cy);
@@ -313,6 +317,14 @@ export function registerDialog(emu: Emulator): void {
 
     wnd.visible = true;
     wnd._ownerDrawPending = true;
+
+    if (emu.mainWindow) {
+      const answered = hookDialogInit(emu, wnd, template, dlg.title, hwndParent, defDlgThunk || dlgProc, () => {
+        emu.cpu.eip = savedEIP;
+        emu.cpu.reg[4] = savedESP;
+      });
+      if (answered !== undefined) return answered;
+    }
 
     let isPromoted = false;
     // If no main window exists, this is a dialog-based app — promote to mainWindow
@@ -494,7 +506,8 @@ export function registerDialog(emu: Emulator): void {
       console.warn(`Dialog template ${desc} not found`);
       return IDCANCEL;
     }
-    return runModalDialog(capturedStackBytes, dlg, hInstance, hwndParent, dlgProc, lParam, String(templatePtr));
+    const template = templatePtr < 0x10000 ? templatePtr : (wide ? emu.memory.readUTF16String(templatePtr) : emu.memory.readCString(templatePtr));
+    return runModalDialog(capturedStackBytes, dlg, hInstance, hwndParent, dlgProc, lParam, template);
   };
 
   user32.register('DialogBoxParamW', 5, () => dialogBoxParamImpl(true));
