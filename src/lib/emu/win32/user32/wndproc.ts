@@ -1,12 +1,13 @@
 import type { Emulator } from '../../emulator';
 import type { WindowInfo } from './types';
+import { setFocusWindow } from './focus';
 import {
   WM_CLOSE, WM_DESTROY, WM_PAINT, WM_ERASEBKGND, WM_SYSCOMMAND,
   WM_NCCREATE, WM_NCDESTROY, WM_NCCALCSIZE, WM_NCPAINT, WM_NCACTIVATE,
   WM_GETMINMAXINFO, WM_SHOWWINDOW, WM_ACTIVATE, WM_SETCURSOR, WM_NCHITTEST,
   WM_WINDOWPOSCHANGING, WM_WINDOWPOSCHANGED, WM_ACTIVATEAPP, WM_SIZE,
   SC_CLOSE, SC_MINIMIZE, SC_MAXIMIZE, SC_RESTORE,
-  HTCLIENT, SYS_COLORS, COLOR_BTNFACE, IDCANCEL,
+  HTCLIENT, SYS_COLORS, COLOR_BTNFACE, IDCANCEL, WA_INACTIVE,
 } from '../types';
 
 export function registerWndProc(emu: Emulator): void {
@@ -127,7 +128,12 @@ export function registerWndProc(emu: Emulator): void {
       }
       case WM_SETCURSOR:
         return 1;
-      case WM_ACTIVATE:
+      case WM_ACTIVATE: {
+        // DefWindowProc: an activated (not minimized) window takes the keyboard focus
+        const actWnd = emu.handles.get<WindowInfo>(hwnd);
+        if ((wParam & 0xFFFF) !== WA_INACTIVE && actWnd && !actWnd.minimized) setFocusWindow(emu, hwnd);
+        return 0;
+      }
       case WM_ACTIVATEAPP:
       case WM_SHOWWINDOW:
       case WM_SIZE:
