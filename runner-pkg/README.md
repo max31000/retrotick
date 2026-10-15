@@ -20,10 +20,21 @@ const handle = await mountGame(hostDiv, {
   persistNamespace: 'sol',           // IndexedDB: registry, INI files, D:\ (default: exeName)
   onExit: () => navigate('/'),       // close button, «Выход», ExitProcess
   onTitleChange: (t) => (document.title = t),
+  audioContext: sharedCtx,           // optional; default: own context, closed on unmount
+  volume: 0.5,                       // optional initial volume 0..1 (default 1)
 });
 handle.focus();     // keyboard focus into the game (done automatically after mount)
+handle.setVolume(0.3); // master volume 0..1, applied live (handle.volume reads it back)
 handle.unmount();   // stop the emulator and clean up
 ```
+
+### Audio / volume
+
+All emulated audio (PlaySound/sndPlaySound, waveOut, DOS sound devices) goes through one
+`GainNode` owned by the runner; `volume` / `setVolume(v)` control it (clamped to 0..1,
+non-finite values ignored). That gain connects to `audioOutput` when given (any node of the
+same `AudioContext`, e.g. a host-wide master `GainNode` or an analyser), otherwise to
+`audioContext.destination`. The gain is disconnected on `unmount()`.
 
 Behaviour: one top-level window in the Windows XP Luna frame, centered in the host
 (`host` should have a size, e.g. `position: relative; height: 100%`); the emulated
@@ -31,7 +42,8 @@ screen size defaults to the host size (`screen` overrides it). Maximize is disab
 window cannot be moved or resized. While focus is inside the game, F1–F12, Space and the
 arrow keys are not passed to the browser. No desktop, taskbar or missing-DLL popups.
 
-Options beyond contract C1: `theme: 'win2k'` (debug), `onMinimize()` (default: no-op).
+Options beyond contract C1: `theme: 'win2k'` (debug), `onMinimize()` (default: no-op),
+`audioOutput`, `volume` and `GameHandle.setVolume()` / `volume` (since 0.3.0).
 Other exports: `registerXpFonts(fonts)`, `LunaFrame`, `LUNA_CSS`.
 
 Notes: the Luna system colours are applied to the emulator's global colour table while a

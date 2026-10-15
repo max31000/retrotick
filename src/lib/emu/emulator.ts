@@ -815,6 +815,8 @@ export class Emulator {
 
   // Audio
   audioContext?: AudioContext;
+  /** Node all emulated audio connects to (e.g. a host GainNode). Default: audioContext.destination. */
+  audioOutput?: AudioNode;
   dosAudio = new DosAudio();
   /** Stop callbacks of API modules that start audio nodes (e.g. PlaySound); run by destroyAudio(). */
   audioStopHooks = new Set<() => void>();

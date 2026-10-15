@@ -430,7 +430,7 @@ export function registerWinmm(emu: Emulator): void {
 
     const source = ctx.createBufferSource();
     source.buffer = audioBuffer;
-    source.connect(ctx.destination);
+    source.connect(emu.audioOutput ?? ctx.destination);
 
     if (fdwSound & SND_LOOP) source.loop = true;
     playingSource = source;
@@ -667,7 +667,7 @@ export function registerWinmm(emu: Emulator): void {
 
     const source = ctx.createBufferSource();
     source.buffer = audioBuffer;
-    source.connect(ctx.destination);
+    source.connect(emu.audioOutput ?? ctx.destination);
 
     const now = ctx.currentTime;
     if (device.scheduledTime < now) {

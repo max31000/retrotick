@@ -29,6 +29,13 @@ export interface MountOptions {
   screen?: { width: number; height: number };
   /** Shared AudioContext. When omitted the runner creates one and closes it on unmount. */
   audioContext?: AudioContext;
+  /**
+   * Node the game's audio is routed to (through the runner's own volume gain).
+   * Must belong to the same AudioContext. Default: the context's destination.
+   */
+  audioOutput?: AudioNode;
+  /** Initial volume, 0..1 (values outside are clamped). Default 1. */
+  volume?: number;
   /** IndexedDB namespace for registry, INI files and D:\ files. Default: exeName. */
   persistNamespace?: string;
   /** Called once when the game window is closed (caption button, «Выход», ExitProcess). */
@@ -44,6 +51,10 @@ export interface GameHandle {
   unmount(): void;
   /** Move keyboard focus into the game. */
   focus(): void;
+  /** Set the game's master volume, 0..1 (clamped; non-finite values are ignored). Applies immediately. */
+  setVolume(volume: number): void;
+  /** Current master volume, 0..1. */
+  readonly volume: number;
   /** The underlying RetroTick `Emulator` instance (for diagnostics/tests). */
   readonly emulator: unknown;
 }

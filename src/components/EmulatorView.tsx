@@ -899,7 +899,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
         // Assign shared AudioContext — created in App during user gesture
         if (sharedAudioContext) {
           emu.audioContext = sharedAudioContext;
-          if (emu.isDOS) emu.dosAudio.init(sharedAudioContext);
+          if (emu.isDOS) emu.dosAudio.init(sharedAudioContext, emu.audioOutput);
         }
 
         // Console app detection (must be after load() which sets isDOS/isConsole)

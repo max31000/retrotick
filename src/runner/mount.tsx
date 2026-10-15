@@ -16,6 +16,7 @@ import { registerXpFonts } from './fonts';
 import { createRunnerStorage } from './storage';
 import { applyLunaSysColors, lunaThemeFor } from './luna-system';
 import { installKeyboardGuard } from './keyboard';
+import { createMasterGain } from './audio';
 import type { GameHandle, MountOptions } from './types';
 
 const DEFAULT_LCID = 0x419;
@@ -110,6 +111,7 @@ export async function mountGame(host: HTMLElement, opts: MountOptions): Promise<
   const storage = createRunnerStorage(opts.persistNamespace ?? opts.exeName);
   const ownAudio = opts.audioContext ? null : createAudioContext();
   const audioContext = opts.audioContext ?? ownAudio;
+  const master = createMasterGain(audioContext, opts.audioOutput, opts.volume);
 
   const root = doc.createElement('div');
   root.className = `bliss-runner${themeName === 'luna' ? ' bliss-luna-root' : ''}`;
@@ -146,12 +148,15 @@ export async function mountGame(host: HTMLElement, opts: MountOptions): Promise<
       removeKeyboardGuard();
       restoreColors();
       storage.close().catch(() => { /* best effort */ });
+      master.dispose();
       ownAudio?.close().catch(() => { /* already closed */ });
       emulator = null;
     },
     focus() {
       root.focus({ preventScroll: true });
     },
+    setVolume(volume: number) { master.setVolume(volume); },
+    get volume() { return master.volume; },
     get emulator() { return emulator; },
   };
 
@@ -171,7 +176,11 @@ export async function mountGame(host: HTMLElement, opts: MountOptions): Promise<
           onExit={onExit}
           onTitleChange={opts.onTitleChange}
           onMinimize={opts.onMinimize}
-          onEmulator={(emu) => { emulator = emu; resolve(); }}
+          onEmulator={(emu) => {
+            emulator = emu;
+            if (master.node) emu.audioOutput = master.node;
+            resolve();
+          }}
         />
       </ThemeContext.Provider>,
       root,
