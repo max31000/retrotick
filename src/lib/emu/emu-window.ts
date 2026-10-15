@@ -6,6 +6,7 @@ import { decodeDib } from '../pe/decode-dib';
 import { rvaToFileOffset } from '../pe/read';
 import { resetDCLayers } from './win32/gdi32/dc-clip';
 import { getClientSize, getNonClientMetrics } from './win32/user32/_helpers';
+import { visibleWindowRect } from './emu-window-clip';
 import { emuFindResourceEntryForModule } from './emu-load';
 
 // Track DCs that have canvas state saved (child window translate)
@@ -107,7 +108,7 @@ export function isDescendantOfMain(emu: Emulator, hwnd: number): boolean {
 }
 
 // Calculate screen-space origin relative to main window's client area
-function getWindowOrigin(emu: Emulator, hwnd: number): { x: number; y: number } {
+export function getWindowOrigin(emu: Emulator, hwnd: number): { x: number; y: number } {
   let x = 0, y = 0;
   let cur = emu.handles.get<WindowInfo>(hwnd);
   while (cur && cur.hwnd !== emu.mainWindow) {
@@ -128,6 +129,8 @@ function getWindowOrigin(emu: Emulator, hwnd: number): { x: number; y: number } 
   return { x, y };
 }
 
+
+
 export function getWindowDC(emu: Emulator, hwnd: number): number {
   const wnd = emu.handles.get<WindowInfo>(hwnd);
   const isDescendant = wnd && hwnd !== emu.mainWindow && isDescendantOfMain(emu, hwnd);
@@ -144,6 +147,10 @@ export function getWindowDC(emu: Emulator, hwnd: number): number {
   // app-set attributes like textColor, selectedBrush) but refresh the canvas
   // state (save/transform/clip) which must be balanced per GetDC/ReleaseDC.
   if (existing && needsTranslate && wnd) {
+    // GetDC on a window that is inside BeginPaint/EndPaint: the cached DC already carries
+    // the origin and paint clip, and EndPaint pops exactly those layers — adding another
+    // save here would leave one stale clip on the shared canvas after EndPaint.
+    if (wnd.painting && childDCSet.has(existing)) return existing;
     if (childDCSet.has(existing)) {
       releaseChildDC(emu, existing);
     }
@@ -158,7 +165,8 @@ export function getWindowDC(emu: Emulator, hwnd: number): number {
       dc.ctx.save();
       dc.ctx.setTransform(1, 0, 0, 1, origin.x, origin.y + ccsYOffset);
       dc.ctx.beginPath();
-      dc.ctx.rect(0, -ccsYOffset, wnd.width, wnd.height);
+      const vis = isPopup ? { x: 0, y: 0, w: wnd.width, h: wnd.height } : visibleWindowRect(emu, hwnd, origin);
+      dc.ctx.rect(vis.x, vis.y - ccsYOffset, vis.w, vis.h);
       dc.ctx.clip();
       childDCSet.add(existing);
       return existing;
@@ -222,7 +230,8 @@ export function getWindowDC(emu: Emulator, hwnd: number): number {
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, origin.x, origin.y + ccsYOffset);
     ctx.beginPath();
-    ctx.rect(0, -ccsYOffset, wnd.width, wnd.height);
+    const vis = isPopup ? { x: 0, y: 0, w: wnd.width, h: wnd.height } : visibleWindowRect(emu, hwnd, origin);
+    ctx.rect(vis.x, vis.y - ccsYOffset, vis.w, vis.h);
     ctx.clip();
     // Fill CCS toolbar background — the DC is shifted down so the top strip
     // would otherwise show the canvas background color instead of BTNFACE.
