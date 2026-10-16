@@ -7,7 +7,7 @@
 import type { Emulator } from '../../emulator';
 import type { WindowInfo } from './types';
 import { Region, type Rect } from '../../region';
-import { getClientSize, getNonClientMetrics } from './_helpers';
+import { getClientSize, clientStyle, getNonClientMetrics } from './_helpers';
 import { WS_CHILD } from '../types';
 
 
@@ -32,7 +32,7 @@ function track(wnd: WindowInfo): Tracked {
 
 export function clientRect(emu: Emulator, wnd: WindowInfo): Rect {
   const isChild = !!(wnd.style & WS_CHILD);
-  const { cw, ch } = getClientSize(wnd.style, !isChild && wnd.hMenu !== 0, wnd.width, wnd.height, emu.isNE);
+  const { cw, ch } = getClientSize(clientStyle(emu, wnd), !isChild && wnd.hMenu !== 0, wnd.width, wnd.height, emu.isNE);
   return { left: 0, top: 0, right: cw, bottom: ch };
 }
 

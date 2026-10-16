@@ -3,6 +3,7 @@ import { fillTextBitmap } from '../../emu-render';
 import { colorToCSS, getDCFont } from './_helpers';
 import { applyFont, getTextMetrics, measureTextWidth } from '../../../gdi';
 import { fontCellHeight } from './text-out';
+import { encodeMBCS } from '../../memory';
 
 export function registerText(emu: Emulator): void {
   const gdi32 = emu.registerDll('GDI32.DLL');
@@ -276,12 +277,15 @@ export function registerText(emu: Emulator): void {
     if (!bufPtr) return faceName.length + 1;
     if (nCount <= 0) return 0;
     const len = Math.min(faceName.length, nCount - 1);
-    for (let i = 0; i < len; i++) {
-      if (wide) emu.memory.writeU16(bufPtr + i * 2, faceName.charCodeAt(i));
-      else emu.memory.writeU8(bufPtr + i, faceName.charCodeAt(i) & 0xFF);
+    if (!wide) {
+      // ANSI: the face name in the system code page, truncated to the buffer
+      const bytes = encodeMBCS(faceName).slice(0, nCount - 1);
+      bytes.forEach((b, i) => emu.memory.writeU8(bufPtr + i, b));
+      emu.memory.writeU8(bufPtr + bytes.length, 0);
+      return bytes.length;
     }
-    if (wide) emu.memory.writeU16(bufPtr + len * 2, 0);
-    else emu.memory.writeU8(bufPtr + len, 0);
+    for (let i = 0; i < len; i++) emu.memory.writeU16(bufPtr + i * 2, faceName.charCodeAt(i));
+    emu.memory.writeU16(bufPtr + len * 2, 0);
     return len;
   };
   gdi32.register('GetTextFaceW', 3, getTextFace(true));

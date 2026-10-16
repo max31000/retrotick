@@ -11,6 +11,9 @@ import {
   HTCLIENT, SYS_COLORS, COLOR_BTNFACE, IDCANCEL, WA_INACTIVE,
 } from '../types';
 
+/** True while DefWindowProcW (rather than DefWindowProcA) is running. */
+let defProcWide = false;
+
 export function registerWndProc(emu: Emulator): void {
   const user32 = emu.registerDll('USER32.DLL');
 
@@ -130,8 +133,12 @@ export function registerWndProc(emu: Emulator): void {
       case WM_SETCURSOR:
         return 1;
       case WM_SETTEXT: {
+        // lParam is ANSI for DefWindowProcA and UTF-16 for DefWindowProcW; NULL clears the text
         const textWnd = emu.handles.get<WindowInfo>(hwnd);
-        if (textWnd && lParam) applyWindowText(emu, hwnd, textWnd, textWnd.unicode ? emu.memory.readUTF16String(lParam) : emu.memory.readCString(lParam));
+        if (!textWnd) return 0;
+        const text = !lParam ? '' : defProcWide ? emu.memory.readUTF16String(lParam) : emu.memory.readCString(lParam);
+        applyWindowText(emu, hwnd, textWnd, text);
+        if (textWnd.domInput) textWnd.domInput.value = text;
         return 1;
       }
       case WM_ACTIVATE: {
@@ -151,7 +158,16 @@ export function registerWndProc(emu: Emulator): void {
     }
   });
 
-  user32.register('DefWindowProcW', 4, emu.apiDefs.get('USER32.DLL:DefWindowProcA')?.handler!);
+  // One implementation for both; the flag tells which character set string parameters use
+  const defProcA = emu.apiDefs.get('USER32.DLL:DefWindowProcA')!;
+  const defProcImpl = defProcA.handler;
+  const withCharset = (wide: boolean) => (e: Emulator) => {
+    const prev = defProcWide;
+    defProcWide = wide;
+    try { return defProcImpl(e); } finally { defProcWide = prev; }
+  };
+  defProcA.handler = withCharset(false);
+  user32.register('DefWindowProcW', 4, withCharset(true));
 
   user32.register('CallWindowProcA', 5, () => {
     const lpPrevWndFunc = emu.readArg(0);

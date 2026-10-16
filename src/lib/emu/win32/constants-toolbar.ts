@@ -85,3 +85,5 @@ export const TB_DEFAULT_BITMAP_H = 15;
 export const TB_DEFAULT_BUTTON_W = 24;
 export const TB_DEFAULT_BUTTON_H = 22;
 export const TB_DEFAULT_SEP_W = 8;
+/** Extra pixels below the button rows after TB_AUTOSIZE (top/bottom border) */
+export const TB_AUTOSIZE_PAD = 2;

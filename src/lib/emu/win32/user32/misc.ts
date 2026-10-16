@@ -1,6 +1,6 @@
 import type { Emulator } from '../../emulator';
 import type { WindowInfo } from './types';
-import { getClientSize, clampToMinTrackSize } from './_helpers';
+import { getClientSize, clientStyle, clampToMinTrackSize } from './_helpers';
 import { emuCompleteThunk } from '../../emu-exec';
 import { launchHelpFile } from '../../help-launcher';
 import { SYS_COLORS, DEFAULT_DOUBLE_CLICK_TIME } from '../types';
@@ -101,7 +101,7 @@ export function registerMisc(emu: Emulator): void {
       return { x: parentOrigin.x + wnd.x, y: parentOrigin.y + wnd.y };
     }
     // Top-level window: account for border and caption
-    const { cw, ch } = getClientSize(wnd.style, wnd.hMenu !== 0, wnd.width, wnd.height);
+    const { cw, ch } = getClientSize(clientStyle(emu, wnd), wnd.hMenu !== 0, wnd.width, wnd.height);
     const bw = (wnd.width - cw) / 2;
     const topH = wnd.height - ch - bw;
     return { x: wnd.x + bw, y: wnd.y + topH };
@@ -288,7 +288,7 @@ export function registerMisc(emu: Emulator): void {
           wnd.width = clamped.w; wnd.height = clamped.h;
         }
         if (sizeChanged && wnd.wndProc) {
-          const { cw, ch } = getClientSize(wnd.style, wnd.hMenu !== 0, wnd.width, wnd.height);
+          const { cw, ch } = getClientSize(clientStyle(emu, wnd), wnd.hMenu !== 0, wnd.width, wnd.height);
           const lParam = ((ch & 0xFFFF) << 16) | (cw & 0xFFFF);
           emu.callWndProc(wnd.wndProc, e.hWnd, 0x0005, 0, lParam); // WM_SIZE
         }

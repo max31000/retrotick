@@ -4,7 +4,7 @@
 import type { Emulator } from '../../emulator';
 import type { WindowInfo } from './types';
 import type { BrushInfo } from '../gdi32/types';
-import { getClientSize } from './_helpers';
+import { getClientSize, clientStyle } from './_helpers';
 import { extTextOut, fontCellHeight } from '../gdi32/text-out';
 import { brushFillStyle } from '../gdi32/pattern';
 import { getDCFont } from '../gdi32/_helpers';
@@ -38,7 +38,7 @@ function layoutLines(text: string, wrap: boolean, width: number, measure: (s: st
 export function paintEditInto(emu: Emulator, hwnd: number, wnd: WindowInfo, hdc: number): void {
   const dc = emu.getDC(hdc);
   if (!dc) return;
-  const { cw, ch } = getClientSize(wnd.style, false, wnd.width, wnd.height, emu.isNE);
+  const { cw, ch } = getClientSize(clientStyle(emu, wnd), false, wnd.width, wnd.height, emu.isNE);
   // The parent chooses colours (and the background brush) through WM_CTLCOLOREDIT/STATIC
   const parent = emu.handles.get<WindowInfo>(wnd.parent);
   const msg = wnd.style & ES_READONLY ? WM_CTLCOLORSTATIC : WM_CTLCOLOREDIT;

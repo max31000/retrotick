@@ -6,13 +6,15 @@ import type { BitmapInfo } from '../gdi32/types';
 import { WM_PAINT, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_COMMAND, SYS_COLORS, COLOR_BTNFACE,
   COLOR_BTNSHADOW, COLOR_BTNHIGHLIGHT, COLOR_3DDKSHADOW, WM_LBUTTONDBLCLK } from '../types';
 import * as T from '../constants-toolbar';
+import { CCS_NORESIZE, CCS_NOPARENTALIGN, CCS_BOTTOM } from '../constants-ctl';
+import { getClientSize, clientStyle } from './_helpers';
 
 interface TbButton { iBitmap: number; idCommand: number; fsState: number; fsStyle: number; dwData: number; iString: number }
 interface TbState {
   buttons: TbButton[];
   images: { canvas: OffscreenCanvas; count: number }[];
   bmpW: number; bmpH: number; btnW: number; btnH: number;
-  notify: number; indent: number; strings: string[]; pressed: number; imageList: number;
+  notify: number; indent: number; strings: string[]; pressed: number; imageList: number; exStyle: number;
 }
 
 function state(wnd: WindowInfo): TbState {
@@ -20,7 +22,7 @@ function state(wnd: WindowInfo): TbState {
   if (!w._toolbar) {
     w._toolbar = {
       buttons: [], images: [], bmpW: T.TB_DEFAULT_BITMAP_W, bmpH: T.TB_DEFAULT_BITMAP_H,
-      btnW: T.TB_DEFAULT_BUTTON_W, btnH: T.TB_DEFAULT_BUTTON_H, notify: 0, indent: 0, strings: [], pressed: -1, imageList: 0,
+      btnW: T.TB_DEFAULT_BUTTON_W, btnH: T.TB_DEFAULT_BUTTON_H, notify: 0, indent: 0, strings: [], pressed: -1, imageList: 0, exStyle: 0,
     };
   }
   return w._toolbar;
@@ -145,6 +147,19 @@ function click(emu: Emulator, hwnd: number, wnd: WindowInfo, s: TbState, i: numb
   const pw = emu.handles.get<WindowInfo>(target);
   if (pw?.wndProc) emu.callWndProc(pw.wndProc, target, WM_COMMAND, b.idCommand & 0xFFFF, hwnd);
   else if (target) emu.postMessage(target, WM_COMMAND, b.idCommand & 0xFFFF, hwnd);
+}
+
+/** TB_AUTOSIZE: height of the button rows; unless CCS_NORESIZE, the width of the parent's client
+ *  area at its top (or bottom with CCS_BOTTOM) edge. */
+function autoSize(emu: Emulator, wnd: WindowInfo, s: TbState): void {
+  const rects = layout(s);
+  wnd.height = Math.max(s.btnH, ...rects.map(r => r.bottom)) + T.TB_AUTOSIZE_PAD;
+  if (wnd.style & CCS_NORESIZE) return;
+  const parent = emu.handles.get<WindowInfo>(wnd.parent);
+  if (!parent) return;
+  const { cw, ch } = getClientSize(clientStyle(emu, parent), parent.hMenu !== 0, parent.width, parent.height, emu.isNE);
+  wnd.width = cw;
+  if (!(wnd.style & CCS_NOPARENTALIGN)) { wnd.x = 0; wnd.y = (wnd.style & CCS_BOTTOM) === CCS_BOTTOM ? ch - wnd.height : 0; }
 }
 
 function indexOfCommand(s: TbState, id: number): number {
@@ -285,8 +300,9 @@ export function handleToolbarMessage(emu: Emulator, hwnd: number, wnd: WindowInf
     case T.TB_SETHOTITEM: case T.TB_SETPADDING: case T.TB_GETPADDING: return 0;
     case T.TB_SETSTYLE: wnd.style = (wnd.style & 0xFFFF0000) | (lParam & 0xFFFF); return 0;
     case T.TB_GETSTYLE: return wnd.style & 0xFFFF;
-    case T.TB_SETEXTENDEDSTYLE: case T.TB_GETEXTENDEDSTYLE: return 0;
-    case T.TB_AUTOSIZE: invalidate(wnd); return 0;
+    case T.TB_SETEXTENDEDSTYLE: { const old = s.exStyle; s.exStyle = lParam >>> 0; return old; }
+    case T.TB_GETEXTENDEDSTYLE: return s.exStyle;
+    case T.TB_AUTOSIZE: autoSize(emu, wnd, s); invalidate(wnd); return 0;
     default: return null;
   }
 }

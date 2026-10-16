@@ -65,6 +65,12 @@ function buildMKFlags(e: PointerEvent): number {
   return mkFlagsFromButtons(e.buttons);
 }
 
+/** Keyboard input goes to the focus window, or the main window when that is gone. */
+function keyTarget(emu: Emulator): number {
+  const f = emu.focusedWindow;
+  return f && emu.handles.getType(f) === 'window' ? f : emu.mainWindow;
+}
+
 function makeLParam(x: number, y: number): number {
   return ((y & 0xFFFF) << 16) | (x & 0xFFFF);
 }
@@ -1299,7 +1305,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
         // Clicks on a child window's standard scroll bar drive the bar (non-client area)
         if (t.bit === BUTTON_BIT_LEFT) {
           if (!t.pressed && scrollBarRelease(emu)) return;
-          if (t.pressed && scrollBarPress(emu, target.hwnd, (target.lParam << 16) >> 16, target.lParam >> 16)) return;
+          if (t.pressed && scrollBarPress(emu, target.hwnd, target.x, target.y)) return;
         }
         if (!t.pressed) emu.postMessage(target.hwnd, WM_MOUSEMOVE, buildMKFlags(saved), target.lParam);
         const msg = buttonMessage(emu, t, target.hwnd, target.x, target.y, time);
@@ -1357,7 +1363,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
       // lParam: repeat count (1) | scanCode << 16 | extended << 24 | previous state << 30
       const scanCode = e.keyCode & 0xFF;
       const lParam = 1 | (scanCode << 16);
-      const target = emu.focusedWindow || emu.mainWindow;
+      const target = keyTarget(emu);
       emu.postMessage(target, WM_KEYDOWN, vk, lParam);
       // Also send WM_CHAR for printable characters
       if (e.key.length === 1 && !e.ctrlKey && !e.altKey) {
@@ -1379,7 +1385,7 @@ export function EmulatorView({ arrayBuffer, peInfo, additionalFiles, exeName, co
       emu.keyStates.delete(vk);
       const scanCode = e.keyCode & 0xFF;
       const lParam = 1 | (scanCode << 16) | (3 << 30); // transition + previous state
-      emu.postMessage(emu.focusedWindow || emu.mainWindow, WM_KEYUP, vk, lParam);
+      emu.postMessage(keyTarget(emu), WM_KEYUP, vk, lParam);
     };
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);

@@ -64,7 +64,6 @@ export function registerScroll(emu: Emulator): void {
     const state = getState(hwnd, nBar);
     state.nMin = nMinPos | 0;
     state.nMax = nMaxPos | 0;
-    state.nPage = 0;
     clampScrollPos(state);
     updateScrollBarVisibility(emu, hwnd, nBar, false);
     return 1;

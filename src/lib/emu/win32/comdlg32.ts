@@ -6,6 +6,8 @@ import { CC_RGBINIT, CC_FULLOPEN, CC_PREVENTFULLOPEN, CHOOSECOLOR_RGBRESULT, CHO
 
 export function registerComdlg32(emu: Emulator): void {
   const comdlg32 = emu.registerDll('COMDLG32.DLL');
+  /** CommDlgExtendedError: set by the last common dialog call */
+  let extendedError = 0;
 
   // OPENFILENAME struct offsets (32-bit)
   const OFN_lpstrFilter = 0x0C;
@@ -49,6 +51,7 @@ export function registerComdlg32(emu: Emulator): void {
   }
 
   function doGetOpenFileName(isWide: boolean): number | undefined {
+    extendedError = 0;
     const lpOfn = emu.readArg(0);
     if (!lpOfn) return 0;
 
@@ -97,6 +100,7 @@ export function registerComdlg32(emu: Emulator): void {
   }
 
   function doGetSaveFileName(isWide: boolean): number | undefined {
+    extendedError = 0;
     const lpOfn = emu.readArg(0);
     if (!lpOfn) return 0;
 
@@ -152,6 +156,7 @@ export function registerComdlg32(emu: Emulator): void {
 
   // ChooseColor(LPCHOOSECOLOR): modal colour picker in the UI; TRUE + rgbResult on OK
   const chooseColor = (): number | undefined => {
+    extendedError = 0;
     const p = emu.readArg(0);
     if (!p || !emu.onShowCommonDialog) return 0;
     const flags = emu.memory.readU32(p + CHOOSECOLOR_FLAGS);
@@ -305,7 +310,6 @@ export function registerComdlg32(emu: Emulator): void {
   });
   comdlg32.register('PageSetupDlgW', 1, () => 0);
   // No printers are installed: PrintDlg fails like Windows without a default printer
-  let extendedError = 0;
   const printDlg = () => { extendedError = PDERR_NODEFAULTPRN; return 0; };
   comdlg32.register('PrintDlgA', 1, printDlg);
   comdlg32.register('PrintDlgW', 1, printDlg);

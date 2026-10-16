@@ -53,7 +53,7 @@ function clientToScreen(emu: Emulator, hwnd: number): { x: number; y: number } {
     return { x: parentOrigin.x + wnd.x, y: parentOrigin.y + wnd.y };
   }
   // Top-level: account for border and caption
-  const { cw, ch } = getClientSize(wnd.style, wnd.hMenu !== 0, wnd.width, wnd.height);
+  const { cw, ch } = getClientSize(clientStyle(emu, wnd), wnd.hMenu !== 0, wnd.width, wnd.height);
   const bw = (wnd.width - cw) / 2;
   const topH = wnd.height - ch - bw;
   return { x: wnd.x + bw, y: wnd.y + topH };
@@ -114,6 +114,13 @@ export function getClientSize(style: number, hasMenu: boolean, totalW: number, t
     cw: Math.max(1, totalW - 2 * bw - sbW),
     ch: Math.max(1, totalH - 2 * bw - captionH - menuH - sbH),
   };
+}
+
+/** Style used for client-area computations: WS_HSCROLL/WS_VSCROLL only take room where the
+ *  emulator draws and handles standard scroll bars (child windows with a guest procedure). */
+export function clientStyle(emu: Emulator, wnd: WindowInfo): number {
+  const nc = !!wnd.wndProc && wnd.hwnd !== emu.mainWindow && !!(wnd.style & WS_CHILD);
+  return nc ? wnd.style : (wnd.style & ~(WS_HSCROLL | WS_VSCROLL)) >>> 0;
 }
 
 /** Width of a vertical / height of a horizontal standard scroll bar of a child window. */

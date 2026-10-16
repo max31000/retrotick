@@ -1,6 +1,6 @@
 import type { Emulator } from '../../emulator';
 import type { WindowInfo } from './types';
-import { getClientSize, getNonClientMetrics } from './_helpers';
+import { getClientSize, clientStyle, getNonClientMetrics } from './_helpers';
 import { WM_SIZE, WM_MOVE, WS_CHILD, WS_POPUP } from '../types';
 import { SIZE_RESTORED } from '../constants-ctl';
 
@@ -15,7 +15,7 @@ export function sendCreateSizeMessages(emu: Emulator, hwnd: number): void {
   if (!wnd || !(wnd.style & (WS_CHILD | WS_POPUP))) return;
   const proc = wnd.wndProc || emu._builtinWndProcW;
   if (!proc) return;
-  const { cw, ch } = getClientSize(wnd.style, wnd.hMenu !== 0 && !(wnd.style & WS_CHILD), wnd.width, wnd.height, emu.isNE);
+  const { cw, ch } = getClientSize(clientStyle(emu, wnd), wnd.hMenu !== 0 && !(wnd.style & WS_CHILD), wnd.width, wnd.height, emu.isNE);
   const { bw, captionH, menuH } = getNonClientMetrics(wnd.style, wnd.hMenu !== 0 && !(wnd.style & WS_CHILD), emu.isNE);
   emu.callWndProc(proc, hwnd, WM_SIZE, SIZE_RESTORED, ((ch & 0xFFFF) << 16) | (cw & 0xFFFF));
   const after = emu.handles.get<WindowInfo>(hwnd);

@@ -65,8 +65,8 @@ async function start(exeName: string): Promise<GameHandle> {
     if (f) files[dll] = await f.arrayBuffer();
   }
   log('mount', exeName);
-  // ?maximize=1 lets resizable programs maximize; Paint is resizable by design
-  const allowMaximize = new URLSearchParams(location.search).get('maximize') === '1' || exeName === 'mspaint.exe';
+  // ?maximize=1 lets resizable programs (e.g. Paint) maximize to the host
+  const allowMaximize = new URLSearchParams(location.search).get('maximize') === '1';
   const handle = await mountGame(host, {
     allowMaximize,
     exe: await exe.arrayBuffer(),

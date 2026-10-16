@@ -1,7 +1,9 @@
 import { isSecondaryTopLevelDialog, showModelessDialog, hideModelessDialog } from './modeless-dialog';
 import { type Emulator, getNextCascadePos } from '../../emulator';
 import type { WindowInfo } from './types';
-import { getClientSize, clampToMinTrackSize } from './_helpers';
+import { setFocusWindow } from './focus';
+import { exposeUnderPopup } from '../../emu-window-clip';
+import { getClientSize, clientStyle, clampToMinTrackSize } from './_helpers';
 import { buildMenuHandleTree } from './menu';
 import { sendCreateSizeMessages } from './window-notify';
 import {
@@ -14,6 +16,17 @@ import {
 /** Lower bound for CW_USEDEFAULT sizes on tiny screens */
 const DEFAULT_MIN_WIDTH = 320;
 const DEFAULT_MIN_HEIGHT = 240;
+
+/** hwnd === ancestor, or hwnd is a (WS_CHILD) descendant of ancestor. */
+function isSelfOrDescendant(emu: Emulator, hwnd: number, ancestor: number): boolean {
+  for (let h = hwnd, depth = 0; h && depth < 64; depth++) {
+    if (h === ancestor) return true;
+    const w = emu.handles.get<WindowInfo>(h);
+    if (!w || !(w.style & WS_CHILD_FLAG)) return false;
+    h = w.parent;
+  }
+  return false;
+}
 
 export function registerCreateWindow(emu: Emulator): void {
   const user32 = emu.registerDll('USER32.DLL');
@@ -323,6 +336,9 @@ export function registerCreateWindow(emu: Emulator): void {
     const hwnd = emu.readArg(0);
     // Send WM_DESTROY synchronously
     const wnd = emu.handles.get<WindowInfo>(hwnd);
+    // Focus inside the destroyed window moves to its parent (child) or nowhere (top-level)
+    const focusParent = wnd && isSelfOrDescendant(emu, emu.focusedWindow, hwnd)
+      ? ((wnd.style & WS_CHILD_FLAG) && wnd.parent ? wnd.parent : -1) : 0;
     if (wnd && wnd.wndProc) {
       emu.callWndProc(wnd.wndProc, hwnd, WM_DESTROY, 0, 0);
       emu.callWndProc(wnd.wndProc, hwnd, WM_NCDESTROY, 0, 0);
@@ -341,12 +357,17 @@ export function registerCreateWindow(emu: Emulator): void {
       }
     }
     hideModelessDialog(emu, hwnd);
+    if (wnd?.visible) exposeUnderPopup(emu, hwnd, wnd);
     // If this was the main window, clear it so the next shown window can be promoted
     if (hwnd === emu.mainWindow) {
       console.log(`[WND] mainWindow 0x${hwnd.toString(16)} destroyed, clearing`);
       emu.mainWindow = 0;
     }
     emu.handles.free(hwnd);
+    if (focusParent) {
+      emu.focusedWindow = 0; // the old focus window is gone: no WM_KILLFOCUS
+      if (focusParent > 0) setFocusWindow(emu, focusParent);
+    }
     return 1;
   });
 
@@ -357,6 +378,7 @@ export function registerCreateWindow(emu: Emulator): void {
     if (!wnd) return 0;
 
     const wasVisible = wnd.visible;
+    if (wasVisible && nCmdShow === 0) exposeUnderPopup(emu, hwnd, wnd);
     const SW_HIDE = 0, SW_SHOWNORMAL = 1, SW_SHOWMINIMIZED = 2, SW_MAXIMIZE = 3;
     const SW_SHOW = 5, SW_MINIMIZE = 6, SW_RESTORE = 9;
     wnd.visible = nCmdShow !== SW_HIDE;
@@ -412,14 +434,14 @@ export function registerCreateWindow(emu: Emulator): void {
 
     // Update canvas size when main window is shown
     if (wnd.visible && wnd.width > 0 && wnd.height > 0 && hwnd === emu.mainWindow) {
-      const { cw, ch } = getClientSize(wnd.style, wnd.hMenu !== 0, wnd.width, wnd.height);
+      const { cw, ch } = getClientSize(clientStyle(emu, wnd), wnd.hMenu !== 0, wnd.width, wnd.height);
       emu.setupCanvasSize(cw, ch);
       emu.onWindowChange?.(wnd);
     }
 
     // Send WM_SHOWWINDOW, WM_SIZE (with client area dims), WM_ACTIVATE
     emu.callWndProc(wnd.wndProc, hwnd, WM_SHOWWINDOW, wnd.visible ? 1 : 0, 0);
-    const { cw, ch } = getClientSize(wnd.style, wnd.hMenu !== 0, wnd.width, wnd.height);
+    const { cw, ch } = getClientSize(clientStyle(emu, wnd), wnd.hMenu !== 0, wnd.width, wnd.height);
     emu.callWndProc(wnd.wndProc, hwnd, WM_SIZE, 0,
       ((ch & 0xFFFF) << 16) | (cw & 0xFFFF));
     if (wnd.visible) {
@@ -457,7 +479,7 @@ export function registerCreateWindow(emu: Emulator): void {
       const clamped = clampToMinTrackSize(emu, hwnd, wnd, w, h);
       console.log(`[MoveWindow] hwnd=0x${hwnd.toString(16)} x=${x} y=${y} w=${clamped.w} h=${clamped.h}`);
       wnd.x = x; wnd.y = y; wnd.width = clamped.w; wnd.height = clamped.h;
-      const { cw, ch } = getClientSize(wnd.style, wnd.hMenu !== 0, clamped.w, clamped.h);
+      const { cw, ch } = getClientSize(clientStyle(emu, wnd), wnd.hMenu !== 0, clamped.w, clamped.h);
       if (hwnd === emu.mainWindow) {
         emu.setupCanvasSize(cw, ch);
       }
@@ -520,7 +542,7 @@ export function registerCreateWindow(emu: Emulator): void {
     }
 
     if ((uFlags & SWP_FRAMECHANGED) || sizeChanged) {
-      const { cw, ch } = getClientSize(wnd.style, wnd.hMenu !== 0, wnd.width, wnd.height);
+      const { cw, ch } = getClientSize(clientStyle(emu, wnd), wnd.hMenu !== 0, wnd.width, wnd.height);
       if (hwnd === emu.mainWindow) {
         emu.setupCanvasSize(cw, ch);
         emu.onWindowChange?.(wnd);

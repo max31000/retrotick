@@ -1,6 +1,6 @@
 import type { Emulator } from '../../emulator';
 import type { WindowInfo } from './types';
-import { getClientSize } from './_helpers';
+import { getClientSize, clientStyle } from './_helpers';
 import { WS_CAPTION, WS_DLGFRAME, WS_BORDER, WS_THICKFRAME } from '../types';
 
 export function registerRect(emu: Emulator): void {
@@ -12,7 +12,7 @@ export function registerRect(emu: Emulator): void {
     const rectPtr = emu.readArg(1);
     const wnd = emu.handles.get<WindowInfo>(hwnd);
     if (!wnd) return 0;
-    const { cw, ch } = getClientSize(wnd.style, wnd.hMenu !== 0, wnd.width, wnd.height);
+    const { cw, ch } = getClientSize(clientStyle(emu, wnd), wnd.hMenu !== 0, wnd.width, wnd.height);
     //if (hwnd === emu.mainWindow) console.log(`[GetClientRect] mainWindow ${wnd.width}x${wnd.height} style=0x${wnd.style.toString(16)} => client ${cw}x${ch}`);
     emu.memory.writeU32(rectPtr, 0);
     emu.memory.writeU32(rectPtr + 4, 0);
@@ -40,7 +40,7 @@ export function registerRect(emu: Emulator): void {
           sy += cur.y || 0;
         } else {
           // Non-child (top-level) parent: add its screen position + client area offset
-          const { cw, ch } = getClientSize(cur.style, cur.hMenu !== 0, cur.width, cur.height);
+          const { cw, ch } = getClientSize(clientStyle(emu, cur), cur.hMenu !== 0, cur.width, cur.height);
           const bw = (cur.width - cw) / 2;
           const topH = cur.height - ch - bw;
           sx += (cur.x || 0) + bw;

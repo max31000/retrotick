@@ -1,6 +1,6 @@
 import type { Emulator } from '../../emulator';
 import type { WindowInfo } from './types';
-import { getClientSize } from './_helpers';
+import { getClientSize, clientStyle } from './_helpers';
 import { WS_VISIBLE } from '../types';
 
 export function registerWindowLong(emu: Emulator): void {
@@ -49,7 +49,7 @@ export function registerWindowLong(emu: Emulator): void {
       wnd.style = value;
       wnd.visible = !!(value & WS_VISIBLE);
       if (hwnd === emu.mainWindow) {
-        const { cw, ch } = getClientSize(wnd.style, wnd.hMenu !== 0, wnd.width, wnd.height);
+        const { cw, ch } = getClientSize(clientStyle(emu, wnd), wnd.hMenu !== 0, wnd.width, wnd.height);
         emu.setupCanvasSize(cw, ch);
         emu.onWindowChange?.(wnd);
       }

@@ -157,12 +157,15 @@ const drags = new WeakMap<Emulator, ScrollDrag>();
 const msgFor = (bar: number) => (bar === SB_VERT ? WM_VSCROLL : WM_HSCROLL);
 
 /**
- * Left button pressed at window-relative (wx, wy). Returns true when the press hit one of the
- * window's standard scroll bars (the click is then consumed and not sent as WM_LBUTTONDOWN).
+ * Left button pressed at canvas point (cx, cy) over window `hwnd`. Returns true when the press
+ * hit one of the window's standard scroll bars (the click is then consumed and not sent as
+ * WM_LBUTTONDOWN). Bars are located in window coordinates (frame/border included).
  */
-export function scrollBarPress(emu: Emulator, hwnd: number, wx: number, wy: number): boolean {
+export function scrollBarPress(emu: Emulator, hwnd: number, cx: number, cy: number): boolean {
   const wnd = emu.handles.get<WindowInfo>(hwnd);
   if (!hasNcScrollBars(emu, hwnd, wnd)) return false;
+  const origin = getWindowOrigin(emu, hwnd);
+  const wx = cx - origin.x, wy = cy - origin.y;
   const g = barGeometry(emu, wnd);
   const S = METRIC_SCROLL_SIZE;
   for (const [bar, geo] of [[SB_VERT, g.v], [SB_HORZ, g.h]] as const) {
