@@ -12,6 +12,18 @@ function shift(dc: DCInfo, update: () => void): void {
   if (dx || dy) dc.ctx.translate(dx, dy);
 }
 
+/** Back to the default origins (common DCs on GetDC/BeginPaint), undoing their canvas offset. */
+export function resetOrigins(dc: DCInfo, transformAlreadyReset = false): void {
+  const dx = (dc.viewportOrgX ?? 0) - (dc.windowOrgX ?? 0), dy = (dc.viewportOrgY ?? 0) - (dc.windowOrgY ?? 0);
+  if (!transformAlreadyReset && (dx || dy)) dc.ctx.translate(-dx, -dy);
+  dc.viewportOrgX = dc.viewportOrgY = dc.windowOrgX = dc.windowOrgY = 0;
+}
+
+/** Device offset of logical coordinates (viewport origin - window origin). */
+export function originOffset(dc: DCInfo): { x: number; y: number } {
+  return { x: (dc.viewportOrgX ?? 0) - (dc.windowOrgX ?? 0), y: (dc.viewportOrgY ?? 0) - (dc.windowOrgY ?? 0) };
+}
+
 export function registerViewport(emu: Emulator): void {
   const gdi32 = emu.registerDll('GDI32.DLL');
   const writePoint = (p: number, x: number, y: number) => {

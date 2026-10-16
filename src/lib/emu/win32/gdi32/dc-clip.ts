@@ -11,6 +11,8 @@ export interface DCLayer {
   kind: 'save' | 'clip' | 'vis';
   /** For 'save': the app clip region to restore on RestoreDC. */
   clipRgn?: Region | null;
+  /** For 'save': window/viewport origins (the canvas transform is restored with the layer). */
+  org?: [number, number, number, number];
 }
 
 const HUGE = 1 << 27;
@@ -44,7 +46,10 @@ export function popVisClip(dc: DCInfo): void {
   while (ls.length > idx) {
     const l = ls.pop()!;
     dc.ctx.restore();
-    if (l.kind === 'save') dc.clipRgn = l.clipRgn ?? null;
+    if (l.kind === 'save') {
+      dc.clipRgn = l.clipRgn ?? null;
+      if (l.org) [dc.viewportOrgX, dc.viewportOrgY, dc.windowOrgX, dc.windowOrgY] = l.org;
+    }
   }
   dc.clipRgn = null;
   dc.visRgn = null;
@@ -61,7 +66,10 @@ export function resetDCLayers(dc: DCInfo): void {
 /** SaveDC: returns the new save level. */
 export function saveDC(dc: DCInfo): number {
   dc.ctx.save();
-  layers(dc).push({ kind: 'save', clipRgn: dc.clipRgn ? dc.clipRgn.clone() : null });
+  layers(dc).push({
+    kind: 'save', clipRgn: dc.clipRgn ? dc.clipRgn.clone() : null,
+    org: [dc.viewportOrgX ?? 0, dc.viewportOrgY ?? 0, dc.windowOrgX ?? 0, dc.windowOrgY ?? 0],
+  });
   return layers(dc).filter(l => l.kind === 'save').length;
 }
 
@@ -75,7 +83,11 @@ export function restoreDC(dc: DCInfo, n: number): boolean {
   while (ls.length && saves > target) {
     const l = ls.pop()!;
     dc.ctx.restore();
-    if (l.kind === 'save') { saves--; dc.clipRgn = l.clipRgn ?? null; }
+    if (l.kind === 'save') {
+      saves--;
+      dc.clipRgn = l.clipRgn ?? null;
+      if (l.org) [dc.viewportOrgX, dc.viewportOrgY, dc.windowOrgX, dc.windowOrgY] = l.org;
+    }
     if (l.kind === 'vis') dc.visRgn = null;
   }
   return true;

@@ -7,6 +7,8 @@ import { rvaToFileOffset } from '../pe/read';
 import { resetDCLayers } from './win32/gdi32/dc-clip';
 import { getClientSize, getNonClientMetrics } from './win32/user32/_helpers';
 import { visibleWindowRect, popupCanvasOrigin, popupVisibleRect } from './emu-window-clip';
+import { resetOrigins, originOffset } from './win32/gdi32/viewport';
+import { CS_OWNDC, CS_CLASSDC } from './win32/constants-user';
 import { emuFindResourceEntryForModule } from './emu-load';
 
 // Track DCs that have canvas state saved (child window translate)
@@ -141,7 +143,13 @@ export function getWindowDC(emu: Emulator, hwnd: number): number {
   const needsTranslate = !hasDomCanvas && (isDescendant || isPopup);
 
   const existing = emu.windowDCs.get(hwnd);
-  if (existing && !needsTranslate && !hasDomCanvas) return existing;
+  // Windows of CS_OWNDC/CS_CLASSDC classes keep their DC state; common DCs start fresh
+  const ownDC = !!wnd && !!(wnd.classInfo?.style & (CS_OWNDC | CS_CLASSDC));
+  if (existing && !needsTranslate && !hasDomCanvas) {
+    const dc = getDC(emu, existing);
+    if (dc && !ownDC && !wnd?.painting) resetOrigins(dc);
+    return existing;
+  }
 
   // For child windows sharing the main canvas, reuse existing DC (preserving
   // app-set attributes like textColor, selectedBrush) but refresh the canvas
@@ -164,8 +172,13 @@ export function getWindowDC(emu: Emulator, hwnd: number): number {
       }
       dc.ctx.save();
       dc.ctx.setTransform(1, 0, 0, 1, origin.x, origin.y + ccsYOffset);
-      // A fresh GetDC starts with default window/viewport origins
-      dc.viewportOrgX = dc.viewportOrgY = dc.windowOrgX = dc.windowOrgY = 0;
+      // setTransform dropped any origin offset; a common DC also forgets the origins
+      if (ownDC) {
+        const o = originOffset(dc);
+        if (o.x || o.y) dc.ctx.translate(o.x, o.y);
+      } else {
+        resetOrigins(dc, true);
+      }
       dc.ctx.beginPath();
       const vis = isPopup ? popupVisibleRect(emu, wnd, origin) : visibleWindowRect(emu, hwnd, origin);
       dc.ctx.rect(vis.x, vis.y - ccsYOffset, vis.w, vis.h);

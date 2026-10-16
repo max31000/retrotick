@@ -9,6 +9,7 @@ import { getRegion, setRegion, readRect, writeRect } from './region';
 import {
   saveDC, restoreDC, setClipRegion, narrowClipRegion, effectiveClip, infiniteRegion,
 } from './dc-clip';
+import { originOffset } from './viewport';
 import { RGN_ERROR, NULLREGION, RGN_AND, RGN_OR, RGN_XOR, RGN_DIFF, RGN_COPY } from '../constants-ctl';
 
 /** Drawing surface of a DC in its coordinates: client area for window DCs, bitmap for memory DCs. */
@@ -54,15 +55,19 @@ export function registerClipApi(emu: Emulator): void {
     return resultType(dc);
   });
 
-  // ExtSelectClipRgn(hdc, hrgn, mode); the region is in device units (== logical for MM_TEXT)
+  // ExtSelectClipRgn(hdc, hrgn, mode); the region is in device units: the DC clips in logical
+  // (canvas) space, so shift it by the window/viewport origin offset
   const extSelect = (dc: DCInfo, hrgn: number, mode: number): number => {
     if (!hrgn) {
       if (mode !== RGN_COPY) return RGN_ERROR;
       setClipRegion(dc, null);
       return resultType(dc);
     }
-    const rgn = getRegion(emu, hrgn);
-    if (!rgn) return RGN_ERROR;
+    const devRgn = getRegion(emu, hrgn);
+    if (!devRgn) return RGN_ERROR;
+    const o = originOffset(dc);
+    const rgn = devRgn.clone();
+    if (o.x || o.y) rgn.offset(-o.x, -o.y);
     const cur = dc.clipRgn ?? new Region([dcSurface(emu, dc)]);
     switch (mode) {
       case RGN_COPY: setClipRegion(dc, rgn); break;
@@ -108,7 +113,10 @@ export function registerClipApi(emu: Emulator): void {
     const dc = dcOf(0);
     if (!dc) return 0xFFFFFFFF;
     if (!dc.clipRgn) return 0;
-    return setRegion(emu, emu.readArg(1), dc.clipRgn.clone()) ? 1 : 0xFFFFFFFF;
+    const dev = dc.clipRgn.clone();
+    const o = originOffset(dc);
+    if (o.x || o.y) dev.offset(o.x, o.y);
+    return setRegion(emu, emu.readArg(1), dev) ? 1 : 0xFFFFFFFF;
   });
 
   gdi32.register('RectVisible', 2, () => {

@@ -68,3 +68,7 @@ export const NONCLIENTMETRICSA_SIZE = 340;
 export const NONCLIENTMETRICSW_SIZE = 500;
 export const FW_NORMAL_WEIGHT = 400;
 export const FW_BOLD_WEIGHT = 700;
+
+// --- Class styles (winuser.h) ---
+export const CS_OWNDC = 0x0020;
+export const CS_CLASSDC = 0x0040;
