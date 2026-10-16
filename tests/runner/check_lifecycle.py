@@ -39,6 +39,8 @@ def main():
         browser = p.chromium.launch(headless=True, args=["--mute-audio"])
         try:
             page = browser.new_page(viewport={"width": 1280, "height": 900})
+            # never let a page grab the pointer
+            page.add_init_script("Element.prototype.requestPointerLock = function () {}; Document.prototype.exitPointerLock = function () {};")
             page.goto(args.url)
             page.evaluate(f"() => new Promise(r => {{ const q = indexedDB.deleteDatabase('{NS_DB}'); q.onsuccess = q.onerror = q.onblocked = () => r(true); }})")
             page.set_input_files("#files", files)

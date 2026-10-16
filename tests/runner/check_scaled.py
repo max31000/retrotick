@@ -40,6 +40,8 @@ def main():
         browser = p.chromium.launch(headless=True, args=["--mute-audio"])
         try:
             page = browser.new_page(viewport={"width": 800, "height": 700})
+            # never let a page grab the pointer
+            page.add_init_script("Element.prototype.requestPointerLock = function () {}; Document.prototype.exitPointerLock = function () {};")
             page.goto(args.url)
             page.set_input_files("#files", files)
             page.evaluate("() => window.__runnerDemo.start('winmine.exe').then(() => true)")
